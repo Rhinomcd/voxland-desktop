@@ -44,7 +44,7 @@ node $C screenshot "${VOXLAND_VERIFY_DIR:-$HOME/.cache/voxland-verify}/evidence/
 node $C record out.mp4 10 '<rect>'   # run in the background, drive from another shell
 ```
 
-A `<rect>` is one synchronous JS expression that yields `{x,y,width,height}` in CSS px or a DOMRect, such as `document.querySelector("[role=dialog]")?.getBoundingClientRect()`. During `record` the page samples it before every paint; each frame keeps only the area the rect covered in every sample around it and is black elsewhere, and black throughout while the rect is absent. Step through a recording's frames before linking it, as with screenshots.
+A `<rect>` is one synchronous JS expression that yields `{x,y,width,height}` in CSS px or a DOMRect, such as `document.querySelector("[role=dialog]")?.getBoundingClientRect()`. During `record` the page samples it before every paint; each frame keeps only the area the rect covered in every sample around it and is black elsewhere, and black throughout while the rect is absent. A translucent or fading surface shows what lies behind it, so start recording once it is opaque and step through a recording's frames before linking it, as with screenshots.
 
 `picker-shots.mjs <outDir> ['<window title>']` renders the screen-share picker in five states (window, quiet window, screen, unknown, override open) from fixtures and saves each one cropped to the modal.
 

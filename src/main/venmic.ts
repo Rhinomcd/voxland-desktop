@@ -325,20 +325,21 @@ function resolveLinkData(request: AudioRequest, snapshot: Snapshot): LinkData | 
         ids.flatMap(id => current.get(id)?.match ?? rememberedMatchers(id, snapshot.processes, keepClientIds));
     const including = (matches: Node[]) =>
         buildLinkData({ include: matches.length ? sortedMatches(matches) : MATCH_NOTHING });
-    // without the lookup a request depends on, keep the current link, or start silent if there is none yet
-    const unresolvable = () => (activeData ? null : including([]));
+    const lookupFailed = !snapshot.hasClients || !snapshot.windows;
+
+    if (request.kind === "none") return including([]);
+    if (activeData && lookupFailed) return null;
 
     switch (request.kind) {
-        case "none":
-            return including([]);
         case "system":
-            if (request.exclude.length && !snapshot.hasClients) return unresolvable();
+            // exclusions resolve through pw-dump client pids and hyprctl window grouping; start silent without them
+            if (request.exclude.length && lookupFailed) return including([]);
             // a reused client id here can only leave out too much, never share too much
             return buildLinkData({ exclude: sortedMatches(matchersOf(request.exclude, true)) });
         case "apps":
             return including(matchersOf(request.apps, false));
         case "window": {
-            if (!snapshot.windows) return unresolvable();
+            if (!snapshot.windows) return including([]);
 
             const { pid, address } = request.window;
             if (!snapshot.windows.some(w => w.address === address && w.pid === pid)) return including([]);

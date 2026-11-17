@@ -274,12 +274,11 @@ function rememberApps(apps: AudioApp[], processes: Map<number, ProcessInfo>) {
     for (const app of apps) {
         knownApps.set(app.id, { app, starts: new Map(app.pids.map(pid => [pid, processes.get(pid)?.start])) });
     }
-    const listed = new Set(apps.map(a => a.id));
+    // apps without pids keep only loose matchers, which are used just for excludes, where they can only over-exclude
     for (const [id, { starts }] of knownApps) {
-        const alive = starts.size
-            ? [...starts].some(([pid, start]) => isSameProcess(pid, start, processes))
-            : listed.has(id);
-        if (!alive) knownApps.delete(id);
+        if (starts.size && ![...starts].some(([pid, start]) => isSameProcess(pid, start, processes))) {
+            knownApps.delete(id);
+        }
     }
 }
 
@@ -320,14 +319,14 @@ function sortedMatches(matches: Node[]) {
     return uniqueMatches(matches).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 }
 
-/**
- * Null keeps the current link: a failed lookup must not reroute or silence a live stream. The first link
- * always goes through, because the renderer only looks for the virtual mic once, right after Go Live.
- */
 function isWindowOpen({ pid, address }: SharedWindow, windows: HyprlandWindow[]) {
     return windows.some(w => w.address === address && w.pid === pid);
 }
 
+/**
+ * Null keeps the current link: a failed lookup must not reroute or silence a live stream. The first link
+ * always goes through, because the renderer only looks for the virtual mic once, right after Go Live.
+ */
 function resolveLinkData(request: AudioRequest, snapshot: Snapshot): LinkData | null {
     const current = new Map(snapshot.apps.map(a => [a.id, a]));
     const matchersOf = (ids: string[], keepLooseMatchers: boolean) =>

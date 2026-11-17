@@ -40,15 +40,15 @@ node .claude/skills/verify-voxland-desktop/cdp.mjs eval 'typeof VesktopNative'  
 C=.claude/skills/verify-voxland-desktop/cdp.mjs
 node $C eval '<js expression, awaited>'
 node $C click 'Go Live'                     # last visible button with that exact text
-node $C screenshot ~/.cache/voxland-verify/evidence/x.png '<js returning {x,y,width,height}>'   # cropped to the rect
-node $C record out.mp4 10 '<js returning {x,y,width,height}>'   # run in the background, drive from another shell
+node $C screenshot "$VOXLAND_VERIFY_DIR/evidence/x.png" '<js returning a rect or DOMRect>'   # cropped to the rect
+node $C record out.mp4 10 '<js returning a rect or DOMRect>'   # run in the background, drive from another shell; keeps only frames where the rect is visible
 ```
 
 `navigator.mediaDevices.getDisplayMedia()` called from `eval` is a real share (see Rules: only when the person at the desktop expects a picker). It takes the same path as Go Live: portal pick, Voxland's picker modal, venmic, and an audio track. Nothing reaches a Discord call. Feature recipes live in `features/`, indexed in `features/README.md`.
 
 ## Evidence
 
-Write to `~/.cache/voxland-verify/evidence/`, which survives cleanup. Capture the state before the action and the result after it. For audio routing, the result is the PipeWire links (`pw-dump`, `pw-link -l`) and the returned track labels; a screenshot alone does not prove routing. Open each PNG before claiming a visual result.
+Write to `$VOXLAND_VERIFY_DIR/evidence/` (default `~/.cache/voxland-verify/evidence/`), which survives cleanup. Capture the state before the action and the result after it. For audio routing, the result is the PipeWire links (`pw-dump`, `pw-link -l`) and the returned track labels; a screenshot alone does not prove routing. Open each PNG before claiming a visual result.
 
 A PR that changes what the app shows embeds before and after screenshots of the same states: before from `main`, after from the PR head. Build each with `VOXLAND_REPO=<checkout> launch.sh` and shoot both with the same script so the pairs differ only by the change. A new state shows after only. A change to an interaction (opening, choosing, expanding) also links a short screen recording from `cdp.mjs record`.
 

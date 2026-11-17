@@ -27,14 +27,24 @@ move_to_headless_output() {
         hyprctl eval 'hl.monitor({ output = "voxverify", mode = "1280x1100@60", position = "20000x20000", scale = 1 })' >/dev/null 2>&1 ||
             hyprctl keyword monitor voxverify,1280x1100@60,20000x20000,1 >/dev/null
     fi
-    local workspace pids address
-    workspace=$(hyprctl monitors -j | jq -r '.[] | select(.name == "voxverify") | .activeWorkspace.name')
-    pids=$(pgrep -P "$1" | paste -sd,)
-    [[ -n $pids ]] || return 0
-    for address in $(hyprctl clients -j | jq -r --argjson p "[$pids]" '.[] | select(.pid as $x | $p | index($x)) | .address'); do
-        hyprctl eval "hl.dispatch(hl.dsp.window.move({ workspace = '$workspace', follow = false, window = 'address:$address' }))" >/dev/null 2>&1 ||
-            hyprctl dispatch movetoworkspacesilent "$workspace,address:$address" >/dev/null
+    local monitor workspace pids clients address
+    monitor=$(hyprctl monitors -j | jq -e '.[] | select(.name == "voxverify") | .id')
+    workspace=$(hyprctl monitors -j | jq -er '.[] | select(.name == "voxverify") | .activeWorkspace.name')
+    # the main window maps a moment after the splash closes, so retry until it exists and sits on the output
+    for _ in $(seq 50); do
+        pids=$(pgrep -P "$1" | paste -sd,) || true
+        clients=$(hyprctl clients -j | jq -c --argjson p "[${pids}]" '[.[] | select(.pid as $x | $p | index($x))]')
+        if jq -e --argjson m "$monitor" 'length > 0 and all(.[]; .monitor == $m)' <<<"$clients" >/dev/null; then
+            return 0
+        fi
+        for address in $(jq -r --argjson m "$monitor" '.[] | select(.monitor != $m) | .address' <<<"$clients"); do
+            hyprctl eval "hl.dispatch(hl.dsp.window.move({ workspace = '$workspace', follow = false, window = 'address:$address' }))" >/dev/null 2>&1 ||
+                hyprctl dispatch movetoworkspacesilent "$workspace,address:$address" >/dev/null
+        done
+        sleep 0.2
     done
+    echo "the app window never reached the voxverify output" >&2
+    return 1
 }
 
 mkdir -p -m 700 "$state/config" "$state/evidence"
@@ -50,7 +60,7 @@ fi
 cd "$repo"
 XDG_CONFIG_HOME=$state/config setsid env -u VENCORD_USER_DATA_DIR node_modules/.bin/electron --remote-debugging-port="$port" "$@" . >"$state/app.log" 2>&1 &
 echo $! >"$state/pid"
-trap 'code=$?; [[ $code -eq 0 ]] || "$here/stop.sh"; exit $code' EXIT
+trap '"$here/stop.sh"' EXIT
 
 pid=$(cat "$state/pid")
 # the main window is shown only once Discord has loaded and the splash page is gone
@@ -59,6 +69,7 @@ for _ in $(seq 60); do
     if curl -s "localhost:$port/json" | jq -e '[.[] | select(.type == "page") | .url] |
         any(test("^https://([a-z]+\\.)?discord\\.com/")) and (any(test("splash\\.html")) | not)' >/dev/null; then
         move_to_headless_output "$pid"
+        trap - EXIT
         echo "ready: pid $pid, cdp $port, log $state/app.log"
         exit 0
     fi

@@ -23,19 +23,26 @@ export interface HyprlandWindow {
     pid: number;
 }
 
-export async function getHyprlandWindows(): Promise<HyprlandWindow[]> {
+/** Resolves to null when hyprctl fails, so callers can tell a failed lookup from a closed window. */
+export async function getHyprlandWindows(): Promise<HyprlandWindow[] | null> {
     if (!process.env.HYPRLAND_INSTANCE_SIGNATURE) return [];
 
     try {
-        const { stdout } = await execFileAsync("hyprctl", ["clients", "-j"]);
+        const { stdout } = await execFileAsync("hyprctl", ["clients", "-j"], { timeout: 5000 });
         return JSON.parse(stdout);
     } catch {
-        return [];
+        return null;
     }
 }
 
-export async function getParentPids() {
-    const parents = new Map<number, number>();
+export interface ProcessInfo {
+    ppid: number;
+    /** start time in clock ticks since boot; tells a reused pid from the original process */
+    start: string;
+}
+
+export async function getProcesses() {
+    const processes = new Map<number, ProcessInfo>();
 
     await Promise.all(
         (await readdir("/proc")).map(async name => {
@@ -45,21 +52,21 @@ export async function getParentPids() {
             if (!procStat) return;
 
             // the comm field may contain spaces and parentheses, so parse from the last ')'
-            const ppid = Number(procStat.slice(procStat.lastIndexOf(")") + 2).split(" ")[1]);
-            parents.set(Number(name), ppid);
+            const fields = procStat.slice(procStat.lastIndexOf(")") + 2).split(" ");
+            processes.set(Number(name), { ppid: Number(fields[1]), start: fields[19] });
         })
     );
 
-    return parents;
+    return processes;
 }
 
-export function withDescendants(root: number, parents: Map<number, number>) {
+export function withDescendants(root: number, processes: Map<number, ProcessInfo>) {
     const tree = new Set([root]);
     let grew = true;
 
     while (grew) {
         grew = false;
-        for (const [pid, ppid] of parents) {
+        for (const [pid, { ppid }] of processes) {
             if (tree.has(ppid) && !tree.has(pid)) {
                 tree.add(pid);
                 grew = true;
@@ -141,14 +148,14 @@ async function resolvePick(since: number): Promise<CaptureTarget | null> {
     if (WHOLE_SCREEN_SELECTIONS.some(prefix => pick.selection.startsWith(prefix))) return { kind: "screen" };
     if (!pick.selection.startsWith("window:")) return null;
 
-    const [windows, parents] = await Promise.all([getHyprlandWindows(), getParentPids()]);
-    const window = findPickedWindow(pick, windows);
+    const [windows, processes] = await Promise.all([getHyprlandWindows(), getProcesses()]);
+    const window = windows && findPickedWindow(pick, windows);
     if (!window || window.pid <= 1) return null;
 
     return {
         kind: "window",
         label: window.title || window.class,
         window: { pid: window.pid, address: window.address },
-        pids: withDescendants(window.pid, parents)
+        pids: withDescendants(window.pid, processes)
     };
 }

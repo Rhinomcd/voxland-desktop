@@ -9,12 +9,18 @@ import { join } from "path";
 import { promisify } from "util";
 
 import type { LinkData, Node, PatchBay as PatchBayType } from "@vencord/venmic";
-import { app } from "electron";
+import { app, type WebContents } from "electron";
 import { IpcEvents } from "shared/IpcEvents";
 import { STATIC_DIR } from "shared/paths";
 import type { AudioApp, AudioAppList, AudioRequest } from "shared/screenShareAudio";
 
-import { getHyprlandWindows, getParentPids, type HyprlandWindow, withDescendants } from "./captureTarget";
+import {
+    getHyprlandWindows,
+    getProcesses,
+    type HyprlandWindow,
+    type ProcessInfo,
+    withDescendants
+} from "./captureTarget";
 import { Settings } from "./settings";
 import { handle } from "./utils/ipcWrappers";
 
@@ -110,7 +116,10 @@ async function getPipeWireClients() {
     const clients = new Map<string, PipeWireClient>();
 
     try {
-        const { stdout } = await execFileAsync("pw-dump", ["PipeWire:Interface:Client"], { maxBuffer: 32 << 20 });
+        const { stdout } = await execFileAsync("pw-dump", ["PipeWire:Interface:Client"], {
+            maxBuffer: 32 << 20,
+            timeout: 5000
+        });
         const objects: { id: number; info?: { props?: Record<string, string | number> } }[] = JSON.parse(stdout);
 
         for (const { id, info } of objects) {
@@ -122,6 +131,7 @@ async function getPipeWireClients() {
         }
     } catch (e) {
         console.warn("pw-dump failed, audio sources will lack per-process info", e);
+        return null;
     }
 
     return clients;
@@ -142,18 +152,18 @@ interface AppGroup {
     window?: HyprlandWindow;
 }
 
-async function listAudioApps(nodes: Node[]): Promise<AudioApp[]> {
+function groupAudioApps(
+    nodes: Node[],
+    clients: Map<string, PipeWireClient>,
+    windows: HyprlandWindow[],
+    processes: Map<number, ProcessInfo>
+): AudioApp[] {
     const { deviceSelect = false } = Settings.store.audio ?? {};
-    const [clients, windows, parents] = await Promise.all([
-        getPipeWireClients(),
-        getHyprlandWindows(),
-        getParentPids()
-    ]);
     const ownPids = new Set(getOwnPids());
 
     // Chromium-based apps play audio from a child of the process that owns the window
     const windowFor = (pid: number) =>
-        windows.find(w => w.pid === pid) ?? windows.find(w => w.pid === parents.get(pid));
+        windows.find(w => w.pid === pid) ?? windows.find(w => w.pid === processes.get(pid)?.ppid);
 
     const groups = new Map<string, AppGroup>();
 
@@ -172,7 +182,7 @@ async function listAudioApps(nodes: Node[]): Promise<AudioApp[]> {
         const key = isDevice
             ? `device:${node["node.name"]}`
             : pid
-              ? `pid:${window?.pid ?? pid}`
+              ? appIdOf(window?.pid ?? pid, processes)
               : `name:${node["application.name"] ?? node["node.name"]}`;
 
         const group = groups.get(key) ?? { nodes: [], pids: new Set() };
@@ -239,13 +249,36 @@ function uniqueMatches(matches: Node[]) {
     });
 }
 
+function appIdOf(pid: number, processes: Map<number, ProcessInfo>) {
+    return `pid:${pid}@${processes.get(pid)?.start ?? ""}`;
+}
+
+function isStillRunning(appId: string, processes: Map<number, ProcessInfo>) {
+    const [, pid, start] = appId.match(/^pid:(\d+)@(.*)$/) ?? [];
+    return !pid || processes.get(Number(pid))?.start === start;
+}
+
+/** Apps seen while picking, so a choice survives the app going quiet; dropped once its process exits. */
 const knownApps = new Map<string, AudioApp>();
 
-async function listAndRemember(venmic: PatchBayType) {
-    const apps = await listAudioApps(venmic.list([]));
+async function takeSnapshot(venmic: PatchBayType) {
+    const nodes = venmic.list([]);
+    const [clients, windows, processes] = await Promise.all([
+        getPipeWireClients(),
+        getHyprlandWindows(),
+        getProcesses()
+    ]);
+    const apps = groupAudioApps(nodes, clients ?? new Map(), windows ?? [], processes);
+
     for (const a of apps) knownApps.set(a.id, a);
-    return apps;
+    for (const id of knownApps.keys()) {
+        if (!isStillRunning(id, processes)) knownApps.delete(id);
+    }
+
+    return { nodes, apps, windows: windows ?? [], processes, complete: clients !== null && windows !== null };
 }
+
+type Snapshot = Awaited<ReturnType<typeof takeSnapshot>>;
 
 // venmic treats an empty include list as "everything", so silence needs a matcher no node has
 const MATCH_NOTHING: Node[] = [{ "node.name": "voxland-match-nothing" }];
@@ -254,16 +287,14 @@ function sortedMatches(matches: Node[]) {
     return uniqueMatches(matches).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 }
 
-async function resolveLinkData(request: AudioRequest, venmic: PatchBayType): Promise<LinkData> {
-    const [apps, parents] = await Promise.all([listAndRemember(venmic), getParentPids()]);
-    const current = new Map(apps.map(a => [a.id, a]));
-    const isAlive = (m: Node) => !m["application.process.id"] || parents.has(Number(m["application.process.id"]));
+/** Null keeps the current link: a failed lookup must not reroute or silence a live stream. */
+function resolveLinkData(request: AudioRequest, snapshot: Snapshot): LinkData | null {
+    if (!snapshot.complete) return null;
 
-    // an app that went quiet keeps the pid matchers of its live processes; its client ids may belong to others by now
+    const current = new Map(snapshot.apps.map(a => [a.id, a]));
+    // an app that went quiet keeps its pid matchers; its client ids may belong to other apps by now
     const matchersOf = (ids: string[]) =>
-        ids.flatMap(
-            id => current.get(id)?.match ?? knownApps.get(id)?.match.filter(m => !m["client.id"] && isAlive(m)) ?? []
-        );
+        ids.flatMap(id => current.get(id)?.match ?? knownApps.get(id)?.match.filter(m => !m["client.id"]) ?? []);
     const including = (matches: Node[]) =>
         buildLinkData({ include: matches.length ? sortedMatches(matches) : MATCH_NOTHING });
 
@@ -276,11 +307,10 @@ async function resolveLinkData(request: AudioRequest, venmic: PatchBayType): Pro
             return including(matchersOf(request.apps));
         case "window": {
             const { pid, address } = request.window;
-            const stillOpen = (await getHyprlandWindows()).some(w => w.address === address && w.pid === pid);
-            if (!stillOpen) return including([]);
+            if (!snapshot.windows.some(w => w.address === address && w.pid === pid)) return including([]);
 
-            const pids = withDescendants(pid, parents);
-            const windowApps = apps.filter(a => a.pids.some(p => pids.includes(p)));
+            const pids = withDescendants(pid, snapshot.processes);
+            const windowApps = snapshot.apps.filter(a => a.pids.some(p => pids.includes(p)));
             return including([
                 ...windowApps.flatMap(a => a.match),
                 ...pids.map(p => ({ "application.process.id": String(p) }))
@@ -289,23 +319,39 @@ async function resolveLinkData(request: AudioRequest, venmic: PatchBayType): Pro
     }
 }
 
+const matchesAny = (targets: Node[], node: Node) =>
+    targets.some(t => Object.entries(t).every(([key, value]) => node[key] === value));
+
+/** venmic.link() tears down every link first, so only relink when a node that exists would change sides. */
+function linkedNodes(data: LinkData, nodes: Node[]) {
+    return nodes
+        .filter(n => (!data.include.length || matchesAny(data.include, n)) && !matchesAny(data.exclude, n))
+        .map(n => n["object.serial"] ?? n["object.id"])
+        .sort()
+        .join(",");
+}
+
 let activeRequest: AudioRequest | null = null;
-let activeLink = "";
+let activeLink: string | null = null;
 let refreshTimer: NodeJS.Timeout | undefined;
 let generation = 0;
+let detachFromRenderer: (() => void) | undefined;
 
 async function applyActiveRequest(venmic: PatchBayType) {
     const request = activeRequest;
     if (!request) return;
 
-    const data = await resolveLinkData(request, venmic);
+    const snapshot = await takeSnapshot(venmic);
     if (request !== activeRequest) return;
 
-    const serialized = JSON.stringify(data);
-    if (serialized !== activeLink) {
-        activeLink = serialized;
-        venmic.link(data);
-    }
+    const data = resolveLinkData(request, snapshot);
+    if (!data) return;
+
+    const linked = linkedNodes(data, snapshot.nodes);
+    if (linked === activeLink) return;
+
+    venmic.link(data);
+    activeLink = linked;
 }
 
 /** Re-resolves while sharing so audio follows processes and PipeWire clients that appear after Go Live. */
@@ -316,21 +362,46 @@ function scheduleRefresh(venmic: PatchBayType, gen: number) {
     }, 3000);
 }
 
+function stopVirtmic() {
+    clearTimeout(refreshTimer);
+    generation++;
+    activeRequest = null;
+    activeLink = null;
+    detachFromRenderer?.();
+    detachFromRenderer = undefined;
+    obtainVenmic()?.unlink();
+}
+
+/** The renderer normally stops the share; this covers reloads and crashes that never send STREAM_CLOSE. */
+function stopWhenRendererGoes(renderer: WebContents) {
+    detachFromRenderer?.();
+    const stop = () => stopVirtmic();
+    renderer.once("render-process-gone", stop);
+    renderer.once("did-navigate", stop);
+    renderer.once("destroyed", stop);
+    detachFromRenderer = () => {
+        renderer.off("render-process-gone", stop);
+        renderer.off("did-navigate", stop);
+        renderer.off("destroyed", stop);
+    };
+}
+
 handle(IpcEvents.VIRT_MIC_LIST, async (): Promise<AudioAppList> => {
     const venmic = obtainVenmic();
     return venmic
-        ? { ok: true, apps: await listAndRemember(venmic), hasPipewirePulse }
+        ? { ok: true, apps: (await takeSnapshot(venmic)).apps, hasPipewirePulse }
         : { ok: false, isGlibCxxOutdated };
 });
 
-handle(IpcEvents.VIRT_MIC_START, async (_, request: AudioRequest) => {
+handle(IpcEvents.VIRT_MIC_START, async (e, request: AudioRequest) => {
     const venmic = obtainVenmic();
     if (!venmic) return;
 
     clearTimeout(refreshTimer);
     const gen = ++generation;
     activeRequest = request;
-    activeLink = "";
+    activeLink = null;
+    stopWhenRendererGoes(e.sender);
     await applyActiveRequest(venmic).catch(console.error);
 
     if (gen === generation) scheduleRefresh(venmic, gen);
@@ -340,10 +411,4 @@ handle(IpcEvents.VIRT_MIC_UNMUTE, () => {
     return obtainVenmic()?.unmute();
 });
 
-handle(IpcEvents.VIRT_MIC_STOP, () => {
-    clearTimeout(refreshTimer);
-    generation++;
-    activeRequest = null;
-    activeLink = "";
-    obtainVenmic()?.unlink();
-});
+handle(IpcEvents.VIRT_MIC_STOP, () => stopVirtmic());

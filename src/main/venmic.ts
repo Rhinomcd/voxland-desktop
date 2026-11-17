@@ -255,7 +255,8 @@ function appIdOf(pid: number, processes: Map<number, ProcessInfo>) {
 
 function isStillRunning(appId: string, processes: Map<number, ProcessInfo>) {
     const [, pid, start] = appId.match(/^pid:(\d+)@(.*)$/) ?? [];
-    return !pid || processes.get(Number(pid))?.start === start;
+    // no start time means the process is outside our pid namespace, so it can't be checked
+    return !pid || !start || processes.get(Number(pid))?.start === start;
 }
 
 /** Apps seen while picking, so a choice survives the app going quiet; dropped once its process exits. */
@@ -287,9 +288,12 @@ function sortedMatches(matches: Node[]) {
     return uniqueMatches(matches).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 }
 
-/** Null keeps the current link: a failed lookup must not reroute or silence a live stream. */
+/**
+ * Null keeps the current link: a failed lookup must not reroute or silence a live stream. The first link
+ * always goes through, because the renderer only looks for the virtual mic once, right after Go Live.
+ */
 function resolveLinkData(request: AudioRequest, snapshot: Snapshot): LinkData | null {
-    if (!snapshot.complete) return null;
+    if (!snapshot.complete && activeData) return null;
 
     const current = new Map(snapshot.apps.map(a => [a.id, a]));
     // an app that went quiet keeps its pid matchers; its client ids may belong to other apps by now
@@ -322,7 +326,6 @@ function resolveLinkData(request: AudioRequest, snapshot: Snapshot): LinkData | 
 const matchesAny = (targets: Node[], node: Node) =>
     targets.some(t => Object.entries(t).every(([key, value]) => node[key] === value));
 
-/** venmic.link() tears down every link first, so only relink when a node that exists would change sides. */
 function linkedNodes(data: LinkData, nodes: Node[]) {
     return nodes
         .filter(n => (!data.include.length || matchesAny(data.include, n)) && !matchesAny(data.exclude, n))
@@ -332,7 +335,7 @@ function linkedNodes(data: LinkData, nodes: Node[]) {
 }
 
 let activeRequest: AudioRequest | null = null;
-let activeLink: string | null = null;
+let activeData: LinkData | null = null;
 let refreshTimer: NodeJS.Timeout | undefined;
 let generation = 0;
 let detachFromRenderer: (() => void) | undefined;
@@ -347,11 +350,14 @@ async function applyActiveRequest(venmic: PatchBayType) {
     const data = resolveLinkData(request, snapshot);
     if (!data) return;
 
-    const linked = linkedNodes(data, snapshot.nodes);
-    if (linked === activeLink) return;
+    // venmic.link() tears down every link first and links new nodes under the current options by itself, so
+    // relink only when a node would change sides, or to drop filters a reused pid could otherwise match
+    const goingSilent = data.include === MATCH_NOTHING && activeData?.include !== MATCH_NOTHING;
+    if (activeData && !goingSilent && linkedNodes(activeData, snapshot.nodes) === linkedNodes(data, snapshot.nodes))
+        return;
 
     venmic.link(data);
-    activeLink = linked;
+    activeData = data;
 }
 
 /** Re-resolves while sharing so audio follows processes and PipeWire clients that appear after Go Live. */
@@ -366,7 +372,7 @@ function stopVirtmic() {
     clearTimeout(refreshTimer);
     generation++;
     activeRequest = null;
-    activeLink = null;
+    activeData = null;
     detachFromRenderer?.();
     detachFromRenderer = undefined;
     obtainVenmic()?.unlink();
@@ -400,7 +406,7 @@ handle(IpcEvents.VIRT_MIC_START, async (e, request: AudioRequest) => {
     clearTimeout(refreshTimer);
     const gen = ++generation;
     activeRequest = request;
-    activeLink = null;
+    activeData = null;
     stopWhenRendererGoes(e.sender);
     await applyActiveRequest(venmic).catch(console.error);
 

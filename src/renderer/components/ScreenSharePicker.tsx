@@ -29,11 +29,10 @@ import {
     useEffect,
     useState
 } from "@vencord/types/webpack/common";
-import type { Node } from "@vencord/venmic";
 import type { Dispatch, SetStateAction } from "react";
 import { State, useSettings, useVesktopState } from "renderer/settings";
 import { isLinux, isWindows } from "renderer/utils";
-import type { AudioApp, AudioAppList, CaptureTarget } from "shared/screenShareAudio";
+import type { AudioApp, AudioAppList, AudioRequest, CaptureTarget } from "shared/screenShareAudio";
 
 import { SimpleErrorBoundary } from "./SimpleErrorBoundary";
 
@@ -52,12 +51,10 @@ type AudioChoice =
     | { kind: "system"; exclude: AudioApp[] }
     | { kind: "apps"; apps: AudioApp[] };
 
-type VenmicRequest = { kind: "none" } | { kind: "system"; exclude: Node[] } | { kind: "include"; include: Node[] };
-
 interface StreamSettings {
     audio: boolean;
     contentHint?: string;
-    venmic?: VenmicRequest;
+    audioRequest?: AudioRequest;
 }
 
 export interface StreamPick extends StreamSettings {
@@ -108,14 +105,12 @@ export function openScreenSharePicker(screens: Source[], skipPicker: boolean, ta
                     submit={async v => {
                         didSubmit = true;
 
-                        if (isLinux && v.venmic) {
+                        if (isLinux && v.audioRequest) {
                             try {
-                                if (v.venmic.kind === "system") {
-                                    await VesktopNative.virtmic.startSystem(v.venmic.exclude);
-                                } else if (v.venmic.kind === "include") {
-                                    await VesktopNative.virtmic.start(v.venmic.include);
-                                } else {
+                                if (v.audioRequest.kind === "none") {
                                     await VesktopNative.virtmic.stop();
+                                } else {
+                                    await VesktopNative.virtmic.start(v.audioRequest);
                                 }
                             } catch (e) {
                                 // still start the stream, just without audio
@@ -395,17 +390,21 @@ function useAudioApps(enabled: boolean) {
         if (!enabled) return;
 
         let cancelled = false;
-        const refresh = () =>
-            VesktopNative.virtmic
-                .list()
-                .then(l => !cancelled && setList(l))
-                .catch(e => new Logger("VesktopScreenShare").error("Failed to list audio sources", e));
+        let timer: ReturnType<typeof setTimeout>;
+        const refresh = async () => {
+            try {
+                const l = await VesktopNative.virtmic.list();
+                if (!cancelled) setList(l);
+            } catch (e) {
+                new Logger("VesktopScreenShare").error("Failed to list audio sources", e);
+            }
+            if (!cancelled) timer = setTimeout(refresh, 2000);
+        };
 
         refresh();
-        const interval = setInterval(refresh, 2000);
         return () => {
             cancelled = true;
-            clearInterval(interval);
+            clearTimeout(timer);
         };
     }, [enabled]);
 
@@ -418,35 +417,30 @@ function appsOfWindow(target: CaptureTarget | null, apps: AudioApp[]) {
 }
 
 function defaultAudioChoice(target: CaptureTarget | null): AudioChoice {
-    return target?.kind === "window" && target.pids.length ? { kind: "window" } : { kind: "system", exclude: [] };
+    if (target?.kind === "window" && target.pids.length) return { kind: "window" };
+    if (target?.kind === "screen") return { kind: "system", exclude: [] };
+    return { kind: "none" };
 }
 
-function toVenmicRequest(choice: AudioChoice, target: CaptureTarget | null, apps: AudioApp[]): VenmicRequest {
-    const latest = (picked: AudioApp[]) => picked.map(p => apps.find(a => a.id === p.id) ?? p);
-    const matches = (picked: AudioApp[]) => latest(picked).flatMap(a => a.match);
-
+function toAudioRequest(choice: AudioChoice): AudioRequest {
     switch (choice.kind) {
-        case "none":
-            return { kind: "none" };
         case "system":
-            return { kind: "system", exclude: matches(choice.exclude) };
+            return { kind: "system", exclude: choice.exclude.map(a => a.id) };
         case "apps":
-            return { kind: "include", include: matches(choice.apps) };
-        case "window": {
-            if (target?.kind !== "window") return { kind: "system", exclude: [] };
-            // pid matches also catch streams the app opens after Go Live
-            const pids = target.pids.map(pid => ({ "application.process.id": String(pid) }));
-            return { kind: "include", include: [...matches(appsOfWindow(target, apps)), ...pids] };
-        }
+            return { kind: "apps", apps: choice.apps.map(a => a.id) };
+        default:
+            return choice;
     }
 }
 
 function describeAudioChoice(choice: AudioChoice, target: CaptureTarget | null, apps: AudioApp[]) {
-    const labels = (picked: AudioApp[]) => picked.map(a => a.label).join(", ");
+    const labels = (picked: AudioApp[]) => picked.map(p => (apps.find(a => a.id === p.id) ?? p).label).join(", ");
 
     switch (choice.kind) {
         case "none":
-            return { title: "No audio", detail: "Your stream will be silent." };
+            return target
+                ? { title: "No audio", detail: "Your stream will be silent." }
+                : { title: "No audio", detail: "Couldn't tell what you're sharing, so pick its audio below." };
         case "system":
             return {
                 title: "All system audio",
@@ -478,7 +472,7 @@ interface AudioPickerProps {
 }
 
 function AudioPickerLinux({ list, target, choice, setChoice }: AudioPickerProps) {
-    const [editing, setEditing] = useState(false);
+    const [editing, setEditing] = useState(!target);
     const [ignorePulseWarning, setIgnorePulseWarning] = useState(false);
 
     if (list && !list.ok && list.isGlibCxxOutdated) {
@@ -637,7 +631,10 @@ function ModalComponent({
         contentHint: "motion",
         audio: true
     });
-    const [audioChoice, setAudioChoice] = useState(() => defaultAudioChoice(target));
+    const [pickedAudio, setAudioChoice] = useState<AudioChoice>();
+    // Voxland's own grid (X11) tells screens from windows; the portal (Wayland) needs the picker hook
+    const resolvedTarget = target ?? (selected?.startsWith("screen:") ? { kind: "screen" as const } : null);
+    const audioChoice = pickedAudio ?? defaultAudioChoice(resolvedTarget);
     const audioList = useAudioApps(isLinux && !!selected);
     useVesktopState().screenshareQuality ??= {
         resolution: "720",
@@ -645,8 +642,7 @@ function ModalComponent({
     };
 
     function handleGoLive() {
-        const apps = audioList?.ok ? audioList.apps : [];
-        const pick = { ...settings, venmic: isLinux ? toVenmicRequest(audioChoice, target, apps) : undefined };
+        const pick = { ...settings, audioRequest: isLinux ? toAudioRequest(audioChoice) : undefined };
         currentSettings = pick;
         submit({ id: selected!, ...pick });
         close();
@@ -679,7 +675,7 @@ function ModalComponent({
                     settings={settings}
                     setSettings={setSettings}
                     skipPicker={skipPicker}
-                    audio={{ list: audioList, target, choice: audioChoice, setChoice: setAudioChoice }}
+                    audio={{ list: audioList, target: resolvedTarget, choice: audioChoice, setChoice: setAudioChoice }}
                 />
             )}
         </Modal>

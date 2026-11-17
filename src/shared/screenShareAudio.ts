@@ -19,3 +19,10 @@ export type CaptureTarget = { kind: "screen" } | { kind: "window"; label: string
 export type AudioAppList =
     | { ok: false; isGlibCxxOutdated: boolean }
     | { ok: true; apps: AudioApp[]; hasPipewirePulse: boolean };
+
+/** The renderer names apps by id; the main process turns them into venmic matchers. */
+export type AudioRequest =
+    | { kind: "none" }
+    | { kind: "window" }
+    | { kind: "system"; exclude: string[] }
+    | { kind: "apps"; apps: string[] };

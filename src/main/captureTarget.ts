@@ -5,7 +5,7 @@
  */
 
 import { execFile } from "child_process";
-import { readdir, readFile, stat } from "fs/promises";
+import { lstat, readdir, readFile } from "fs/promises";
 import { join } from "path";
 import { promisify } from "util";
 
@@ -14,7 +14,10 @@ import type { CaptureTarget } from "shared/screenShareAudio";
 const execFileAsync = promisify(execFile);
 
 /** Written by scripts/linux/voxland-record-share-pick, which wraps the xdg-desktop-portal-hyprland picker. */
-const PICK_FILE = join(process.env.XDG_RUNTIME_DIR ?? "/tmp", "voxland-share-pick");
+const PICK_FILE = process.env.XDG_RUNTIME_DIR && join(process.env.XDG_RUNTIME_DIR, "voxland-share-pick");
+
+/** The window chosen in the latest share request; venmic re-resolves its process tree while sharing. */
+export let sharedWindowPid: number | null = null;
 
 export interface HyprlandWindow {
     address: string;
@@ -109,11 +112,12 @@ function findPickedWindow(pick: PortalPick, windows: HyprlandWindow[]) {
     const entry = pick.windows.find(w => w.handle === handle);
     if (!entry) return null;
 
-    return (
-        windows.find(w => entry.address !== undefined && BigInt(w.address) === entry.address) ??
-        windows.find(w => w.class === entry.class && w.title === entry.title) ??
-        null
-    );
+    if (entry.address !== undefined) {
+        return windows.find(w => BigInt(w.address) === entry.address) ?? null;
+    }
+
+    const sameName = windows.filter(w => w.class === entry.class && w.title === entry.title);
+    return sameName.length === 1 ? sameName[0] : null;
 }
 
 /**
@@ -121,10 +125,11 @@ function findPickedWindow(pick: PortalPick, windows: HyprlandWindow[]) {
  * so this relies on the picker hook having recorded the choice after `since`.
  */
 export async function readCaptureTarget(since: number): Promise<CaptureTarget | null> {
-    const recordedAt = await stat(PICK_FILE)
-        .then(s => s.mtimeMs)
-        .catch(() => 0);
-    if (recordedAt < since) return null;
+    sharedWindowPid = null;
+    if (!PICK_FILE) return null;
+
+    const file = await lstat(PICK_FILE).catch(() => null);
+    if (!file?.isFile() || file.uid !== process.getuid?.() || file.mtimeMs < since) return null;
 
     const pick = parsePortalPick(await readFile(PICK_FILE, "utf8"));
     if (!pick) return null;
@@ -132,7 +137,8 @@ export async function readCaptureTarget(since: number): Promise<CaptureTarget | 
 
     const [windows, parents] = await Promise.all([getHyprlandWindows(), getParentPids()]);
     const window = findPickedWindow(pick, windows);
-    if (!window) return null;
+    if (!window || window.pid <= 1) return null;
 
+    sharedWindowPid = window.pid;
     return { kind: "window", label: window.title || window.class, pids: withDescendants(window.pid, parents) };
 }

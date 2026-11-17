@@ -12,9 +12,15 @@ import type { LinkData, Node, PatchBay as PatchBayType } from "@vencord/venmic";
 import { app } from "electron";
 import { IpcEvents } from "shared/IpcEvents";
 import { STATIC_DIR } from "shared/paths";
-import type { AudioApp, AudioAppList } from "shared/screenShareAudio";
+import type { AudioApp, AudioAppList, AudioRequest } from "shared/screenShareAudio";
 
-import { getHyprlandWindows, getParentPids, type HyprlandWindow } from "./captureTarget";
+import {
+    getHyprlandWindows,
+    getParentPids,
+    type HyprlandWindow,
+    sharedWindowPid,
+    withDescendants
+} from "./captureTarget";
 import { Settings } from "./settings";
 import { handle } from "./utils/ipcWrappers";
 
@@ -232,22 +238,100 @@ function uniqueMatches(matches: Node[]) {
     });
 }
 
+const knownApps = new Map<string, AudioApp>();
+
+async function listAndRemember(venmic: PatchBayType) {
+    const apps = await listAudioApps(venmic.list([]));
+    for (const a of apps) knownApps.set(a.id, a);
+    return apps;
+}
+
+async function resolveLinkData(request: AudioRequest, venmic: PatchBayType): Promise<LinkData | null> {
+    const apps = await listAndRemember(venmic);
+    const current = new Map(apps.map(a => [a.id, a]));
+
+    // an app that went quiet keeps its pid matchers; its client ids may be reused by other apps by now
+    const matchersOf = (ids: string[]) =>
+        ids.flatMap(id => current.get(id)?.match ?? knownApps.get(id)?.match.filter(m => !m["client.id"]) ?? []);
+
+    switch (request.kind) {
+        case "none":
+            return null;
+        case "system":
+            return buildLinkData({ exclude: matchersOf(request.exclude) });
+        case "apps":
+            return buildLinkData({ include: matchersOf(request.apps) });
+        case "window": {
+            if (!sharedWindowPid) return null;
+            const pids = withDescendants(sharedWindowPid, await getParentPids());
+            const windowApps = apps.filter(a => a.pids.some(pid => pids.includes(pid)));
+            return buildLinkData({
+                include: [
+                    ...windowApps.flatMap(a => a.match),
+                    ...pids.map(pid => ({ "application.process.id": String(pid) }))
+                ]
+            });
+        }
+    }
+}
+
+let activeRequest: AudioRequest | null = null;
+let activeLink = "";
+let refreshTimer: NodeJS.Timeout | undefined;
+
+/** Re-resolved on a timer so shares follow processes and PipeWire clients that appear after Go Live. */
+async function applyActiveRequest(venmic: PatchBayType) {
+    const request = activeRequest;
+    if (!request) return;
+
+    const data = await resolveLinkData(request, venmic);
+    if (request !== activeRequest) return;
+
+    if (!data) {
+        stopVirtmic(venmic);
+        return;
+    }
+
+    const serialized = JSON.stringify(data);
+    if (serialized !== activeLink) {
+        activeLink = serialized;
+        venmic.link(data);
+    }
+}
+
+function stopVirtmic(venmic: PatchBayType) {
+    clearInterval(refreshTimer);
+    activeRequest = null;
+    activeLink = "";
+    venmic.unlink();
+}
+
 handle(IpcEvents.VIRT_MIC_LIST, async (): Promise<AudioAppList> => {
-    const nodes = obtainVenmic()?.list([]);
-
-    return nodes ? { ok: true, apps: await listAudioApps(nodes), hasPipewirePulse } : { ok: false, isGlibCxxOutdated };
+    const venmic = obtainVenmic();
+    return venmic
+        ? { ok: true, apps: await listAndRemember(venmic), hasPipewirePulse }
+        : { ok: false, isGlibCxxOutdated };
 });
 
-handle(IpcEvents.VIRT_MIC_START, (_, include: Node[]) => {
-    return obtainVenmic()?.link(buildLinkData({ include }));
-});
+handle(IpcEvents.VIRT_MIC_START, async (_, request: AudioRequest) => {
+    const venmic = obtainVenmic();
+    if (!venmic) return;
 
-handle(IpcEvents.VIRT_MIC_START_SYSTEM, (_, exclude: Node[]) => {
-    return obtainVenmic()?.link(buildLinkData({ exclude }));
+    clearInterval(refreshTimer);
+    activeRequest = request;
+    activeLink = "";
+    await applyActiveRequest(venmic);
+
+    if (activeRequest === request && request.kind !== "none") {
+        refreshTimer = setInterval(() => applyActiveRequest(venmic).catch(console.error), 3000);
+    }
 });
 
 handle(IpcEvents.VIRT_MIC_UNMUTE, () => {
     return obtainVenmic()?.unmute();
 });
 
-handle(IpcEvents.VIRT_MIC_STOP, () => obtainVenmic()?.unlink());
+handle(IpcEvents.VIRT_MIC_STOP, () => {
+    const venmic = obtainVenmic();
+    if (venmic) stopVirtmic(venmic);
+});

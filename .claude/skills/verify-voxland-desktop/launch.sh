@@ -33,6 +33,10 @@ move_to_headless_output() {
         hypr_eval 'hl.monitor({ output = "voxverify", mode = "1280x1100@60", position = "20000x20000", scale = 1 })' ||
             hyprctl keyword monitor voxverify,1280x1100@60,20000x20000,1 >/dev/null
     fi
+    if ! hyprctl monitors -j | jq -e '.[] | select(.name == "voxverify") | .x == 20000' >/dev/null; then
+        echo "could not place the voxverify output at 20000,20000" >&2
+        return 1
+    fi
     local monitor workspace pids clients address
     monitor=$(hyprctl monitors -j | jq -e '.[] | select(.name == "voxverify") | .id')
     workspace=$(hyprctl monitors -j | jq -er '.[] | select(.name == "voxverify") | .activeWorkspace.name')
@@ -82,5 +86,5 @@ for _ in $(seq 60); do
     fi
     sleep 1
 done
-echo "discord page never loaded" >&2
+if kill -0 "$pid" 2>/dev/null; then echo "discord page never loaded" >&2; else echo "the app exited before discord loaded" >&2; fi
 exit 1

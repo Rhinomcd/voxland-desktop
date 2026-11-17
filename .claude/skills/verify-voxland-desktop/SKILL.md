@@ -21,7 +21,7 @@ The app is an Electron shell around discord.com. Screen share on Wayland goes th
 
 If it exits non-zero it has already stopped the instance; read the log tail it prints.
 
-On Hyprland it creates a headless output, `voxverify`, at 20000,20000 and moves the dev window onto it once Discord has loaded, so the window renders and animates off the physical screens. The splash shows on the current workspace while Discord loads, and the main window for up to a second before the move; `stop.sh` removes the output. Extra arguments go to Electron. `VOXLAND_REPO=<worktree>` builds and runs another checkout; `VOXLAND_VERIFY_DIR` gives it its own profile dir.
+On Hyprland it creates a headless output, `voxverify`, at 20000,20000 and moves the dev window onto it once Discord has loaded, so the window renders and animates off the physical screens. The splash shows on the current workspace while Discord loads, and the main window until the move lands, normally within a second; `stop.sh` removes the output. Extra arguments go to Electron. `VOXLAND_REPO=<worktree>` builds and runs another checkout; `VOXLAND_VERIFY_DIR` gives it its own profile dir.
 
 On first launch it copies `~/.config/vesktop` into `$VOXLAND_VERIFY_DIR/config` and points `XDG_CONFIG_HOME` at the copy, so the dev build starts logged in and runs beside an installed Vesktop. `VOXLAND_CDP_PORT` overrides port 9447.
 
@@ -44,7 +44,7 @@ node $C screenshot "${VOXLAND_VERIFY_DIR:-$HOME/.cache/voxland-verify}/evidence/
 node $C record out.mp4 10 '<rect>'   # run in the background, drive from another shell
 ```
 
-A `<rect>` is one JS expression that yields `{x,y,width,height}` in CSS px or a DOMRect, such as `document.querySelector("[role=dialog]")?.getBoundingClientRect()`. `record` samples it around every frame, drops frames painted while it was absent, and blacks out everything outside it, so a surface that moves or grows never reveals what lies around it. Step through a recording's frames before linking it, as with screenshots.
+A `<rect>` is one synchronous JS expression that yields `{x,y,width,height}` in CSS px or a DOMRect, such as `document.querySelector("[role=dialog]")?.getBoundingClientRect()`. During `record` the page samples it before every paint; each frame keeps only the area the rect covered in every sample around it and is black elsewhere, and black throughout while the rect is absent. Step through a recording's frames before linking it, as with screenshots.
 
 `picker-shots.mjs <outDir> ['<window title>']` renders the screen-share picker in five states (window, quiet window, screen, unknown, override open) from fixtures and saves each one cropped to the modal.
 

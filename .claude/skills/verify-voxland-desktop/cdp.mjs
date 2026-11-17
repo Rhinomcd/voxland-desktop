@@ -47,7 +47,7 @@ if (command === "eval") {
     console.log(`clicked "${arg}"`);
 } else if (command === "record") {
     const seconds = Number(arg2 ?? 10);
-    if (!(seconds > 0)) throw new Error("usage: cdp.mjs record <file.mp4> <seconds> [rect]");
+    if (!arg || !(seconds > 0 && Number.isFinite(seconds))) throw new Error("usage: cdp.mjs record <file.mp4> <seconds> [rect]");
     await record(arg, seconds, arg3);
 } else {
     throw new Error("usage: cdp.mjs eval <js> | screenshot <file> [rect] | click <text> | record <file.mp4> <seconds> [rect]");

@@ -7,6 +7,7 @@
 import type { Node } from "@vencord/venmic";
 import { ipcRenderer } from "electron/renderer";
 import type { IpcMessage, IpcResponse } from "main/ipcCommands";
+import type { AudioAppList } from "shared/screenShareAudio";
 import type { Settings } from "shared/settings";
 
 import { IpcEvents } from "../shared/IpcEvents";
@@ -86,10 +87,7 @@ export const VesktopNative = {
     },
     /** only available on Linux. */
     virtmic: {
-        list: () =>
-            invoke<
-                { ok: false; isGlibCxxOutdated: boolean } | { ok: true; targets: Node[]; hasPipewirePulse: boolean }
-            >(IpcEvents.VIRT_MIC_LIST),
+        list: () => invoke<AudioAppList>(IpcEvents.VIRT_MIC_LIST),
         start: (include: Node[]) => invoke<void>(IpcEvents.VIRT_MIC_START, include),
         startSystem: (exclude: Node[]) => invoke<void>(IpcEvents.VIRT_MIC_START_SYSTEM, exclude),
         unmute: () => invoke<void>(IpcEvents.VIRT_MIC_UNMUTE),

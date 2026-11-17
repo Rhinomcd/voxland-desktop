@@ -1,0 +1,18 @@
+#!/bin/sh
+# Pipe your xdg-desktop-portal-hyprland picker through this so Voxland knows which window you shared
+# and can send only that app's audio. The portal never tells the app what was picked.
+#
+# ~/.config/hypr/xdph.conf:
+#   screencopy {
+#       custom_picker_binary = /path/to/my-picker
+#   }
+# /path/to/my-picker:
+#   #!/bin/sh
+#   hyprland-share-picker "$@" | /path/to/voxland-record-share-pick
+
+output=$(cat)
+printf '%s\n' "$output"
+
+selection=$(printf '%s\n' "$output" | grep -m1 '\[SELECTION\]') || exit 0
+record="${XDG_RUNTIME_DIR:-/tmp}/voxland-share-pick"
+printf '%s\n%s' "$selection" "$XDPH_WINDOW_SHARING_LIST" >"$record.tmp" && mv "$record.tmp" "$record"

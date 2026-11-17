@@ -143,8 +143,25 @@
 .vcd-screen-picker-audio-sources {
     display: flex;
     gap: 1em;
+    margin-top: 0.75em;
 
     > section {
         flex: 1;
     }
+}
+
+.vcd-screen-picker-audio-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1em;
+}
+
+.vcd-screen-picker-audio-title {
+    font-weight: 600;
+}
+
+.vcd-screen-picker-audio-detail {
+    color: var(--text-muted);
+    font-size: 0.875em;
 }

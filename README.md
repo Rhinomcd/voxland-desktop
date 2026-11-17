@@ -32,6 +32,27 @@ These apply to every PR, whether a person, an agent, or both wrote it.
 4. **Blocks are a last resort.** We block accounts for harassment or repeated, deliberate spam, never for a single PR that misses the bar.
 5. **Professional conduct.** We critique code, not people, in reviews, comments, and commit messages alike. Everyone else is held to the same standard.
 
+## Screen share audio on Hyprland
+
+When you share a window, Voxland sends that app's audio, like Discord on Windows does. When you share a whole screen, it sends all system audio except Discord's own. "Change" in the picker overrides either choice.
+
+The portal never tells the app which window you picked. To let Voxland see the choice, pipe your xdg-desktop-portal-hyprland picker through [`scripts/linux/voxland-record-share-pick`](scripts/linux/voxland-record-share-pick). Save this as an executable `~/.local/bin/my-share-picker`:
+
+```sh
+#!/bin/sh
+hyprland-share-picker "$@" | /path/to/voxland-record-share-pick
+```
+
+Then point xdg-desktop-portal-hyprland at it in `~/.config/hypr/xdph.conf`:
+
+```ini
+screencopy {
+    custom_picker_binary = /home/you/.local/bin/my-share-picker
+}
+```
+
+Without the hook, every share defaults to all system audio.
+
 ---
 
 # Vesktop

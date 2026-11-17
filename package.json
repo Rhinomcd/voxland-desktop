@@ -9,22 +9,22 @@
     "author": "Vendicated <vendicated@riseup.net>",
     "main": "dist/js/main.js",
     "scripts": {
-        "build": "tsx scripts/build/build.mts",
-        "build:dev": "pnpm build --dev",
-        "buildLibVesktop": "pnpm -C packages/libvesktop install && pnpm -C packages/libvesktop run build",
-        "package": "pnpm build && electron-builder",
-        "package:dir": "pnpm build && electron-builder --dir",
-        "lint": "oxlint src scripts packages/discord-rpc",
-        "lint:fix": "pnpm lint --fix",
-        "fmt": "oxfmt",
-        "fmt:check": "oxfmt --check",
-        "start": "pnpm build && electron --enable-source-maps .",
-        "start:dev": "pnpm build:dev && electron --enable-source-maps .",
-        "start:watch": "pnpm build:dev && tsx scripts/startWatch.mts",
-        "test": "pnpm lint && pnpm fmt:check && pnpm testTypes",
+        "build": "vpx scripts/build/build.mts",
+        "build:dev": "vp run build --dev",
+        "buildLibVesktop": "vp -C packages/libvesktop install && vp -C packages/libvesktop run build",
+        "package": "vp run build && electron-builder",
+        "package:dir": "vp run build && electron-builder --dir",
+        "lint": "vp lint src scripts packages/discord-rpc",
+        "lint:fix": "vp run lint --fix",
+        "fmt": "vp fmt",
+        "fmt:check": "vp fmt --check",
+        "start": "vp run build && electron --enable-source-maps .",
+        "start:dev": "vp run build:dev && electron --enable-source-maps .",
+        "start:watch": "vp run build:dev && vpx scripts/startWatch.mts",
+        "test": "vp run lint && vp run fmt:check && vp run testTypes",
         "testTypes": "tsc --noEmit",
-        "watch": "pnpm build --watch",
-        "generateMeta": "tsx scripts/utils/generateMeta.mts"
+        "watch": "vp run build --watch",
+        "generateMeta": "vpx scripts/utils/generateMeta.mts"
     },
     "dependencies": {
         "electron-updater": "6.6.2"
@@ -43,13 +43,12 @@
         "esbuild": "^0.28.2",
         "eslint-plugin-simple-header": "^1.2.2",
         "libvesktop": "link:packages/libvesktop",
-        "oxfmt": "^0.76.0",
-        "oxlint": "^1.91.0",
         "source-map-support": "^0.5.21",
         "tsx": "^4.23.15",
         "type-fest": "^5.10.0",
         "typescript": "^6.0.3",
-        "xml-formatter": "^3.6.7"
+        "xml-formatter": "^3.6.7",
+        "vite-plus": "catalog:"
     },
     "packageManager": "pnpm@12.16.1",
     "engines": {

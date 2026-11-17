@@ -2,12 +2,15 @@
 # Builds the dev bundle and starts it on the host desktop with an isolated profile and a CDP port.
 # The profile is copied from ~/.config/vesktop on first launch so Discord is already logged in.
 set -euo pipefail
-repo=${VOXLAND_REPO:-$(git -C "$(dirname "$0")" rev-parse --show-toplevel)}
+here=$(cd "$(dirname "$0")" && pwd)
+repo=${VOXLAND_REPO:-$(git -C "$here" rev-parse --show-toplevel)}
 state=${VOXLAND_VERIFY_DIR:-$HOME/.cache/voxland-verify}
 port=${VOXLAND_CDP_PORT:-9447}
 
-if [[ -e $state/pid ]] && kill -0 "$(cat "$state/pid")" 2>/dev/null; then
-    echo "already running: pid $(cat "$state/pid")" >&2
+# shellcheck source=pid.sh
+source "$here/pid.sh"
+if pid=$(running_pid); then
+    echo "already running: pid $pid" >&2
     exit 1
 fi
 if ss -ltn | grep -q ":$port "; then
@@ -33,24 +36,32 @@ move_to_headless_output() {
     done
 }
 
-mkdir -p -m 700 "$state/config/vesktop" "$state/evidence"
-if [[ ! -d $state/config/vesktop/sessionData ]]; then
-    (cd ~/.config/vesktop && cp -r settings settings.json state.json sessionData "$state/config/vesktop/")
-    rm -f "$state/config/vesktop/sessionData/"Singleton*
+mkdir -p -m 700 "$state/config" "$state/evidence"
+if [[ ! -d $state/config/vesktop ]]; then
+    rm -rf "$state/config/vesktop.partial"
+    cp -r ~/.config/vesktop "$state/config/vesktop.partial"
+    rm -f "$state/config/vesktop.partial/sessionData/"Singleton*
+    mv "$state/config/vesktop.partial" "$state/config/vesktop"
 fi
 
 (cd "$repo" && pnpm build:dev >/dev/null)
 cd "$repo"
-XDG_CONFIG_HOME=$state/config setsid node_modules/.bin/electron --remote-debugging-port="$port" "$@" . >"$state/app.log" 2>&1 &
+XDG_CONFIG_HOME=$state/config setsid env -u VENCORD_USER_DATA_DIR node_modules/.bin/electron --remote-debugging-port="$port" "$@" . >"$state/app.log" 2>&1 &
 echo $! >"$state/pid"
 
+pid=$(cat "$state/pid")
+# the main window is shown only once Discord has loaded and the splash page is gone
 for _ in $(seq 60); do
-    if curl -s "localhost:$port/json" | grep -q '"url": "https://discord.com'; then
-        move_to_headless_output "$(cat "$state/pid")"
-        echo "ready: pid $(cat "$state/pid"), cdp $port, log $state/app.log"
+    kill -0 "$pid" 2>/dev/null || break
+    if curl -s "localhost:$port/json" | jq -e '[.[] | select(.type == "page") | .url] |
+        any(test("^https://([a-z]+\\.)?discord\\.com/")) and (any(test("splash\\.html")) | not)' >/dev/null; then
+        move_to_headless_output "$pid"
+        echo "ready: pid $pid, cdp $port, log $state/app.log"
         exit 0
     fi
     sleep 1
 done
-echo "discord page never loaded; see $state/app.log" >&2
+echo "discord page never loaded; stopping it. Log tail ($state/app.log):" >&2
+tail -n 20 "$state/app.log" >&2
+"$here/stop.sh"
 exit 1

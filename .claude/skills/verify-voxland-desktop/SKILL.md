@@ -9,7 +9,7 @@ The app is an Electron shell around discord.com. Screen share on Wayland goes th
 
 ## Rules
 
-- Drive the picker and audio routing from fixtures. `Vesktop.Components.ScreenShare.openScreenSharePicker(screens, true, target)` renders the picker, and `VesktopNative.virtmic.start(request)` links audio. Neither makes a portal request.
+- Drive the picker and audio routing from fixtures. `Vesktop.Components.ScreenShare.openScreenSharePicker(screens, true)` renders the picker, and `VesktopNative.virtmic` links audio. Neither makes a portal request.
 - A real share makes two or three portal requests (thumbnail, capture start, sometimes a renegotiation), and each can open the compositor's share picker. Run one only when the person at the desktop expects it, and kill any `hyprland-preview-share-picker` the run spawned (`pgrep -a -x hyprland-previe`).
 - If a share request is cancelled, do not retry it. Run `stop.sh`.
 
@@ -19,6 +19,8 @@ The app is an Electron shell around discord.com. Screen share on Wayland goes th
 .claude/skills/verify-voxland-desktop/launch.sh   # builds dev, prints "ready: pid …, cdp 9447, log …"
 ```
 
+If it exits non-zero it has already stopped the instance; read the log tail it prints.
+
 On Hyprland it creates a headless output, `voxverify`, at 20000,20000 and moves the dev window onto it, so the window renders and animates without appearing on a physical screen; `stop.sh` removes the output. Extra arguments go to Electron. `VOXLAND_REPO=<worktree>` builds and runs another checkout; `VOXLAND_VERIFY_DIR` gives it its own profile dir.
 
 On first launch it copies `~/.config/vesktop` into `$VOXLAND_VERIFY_DIR/config` and points `XDG_CONFIG_HOME` at the copy, so the dev build starts logged in and runs beside an installed Vesktop. `VOXLAND_CDP_PORT` overrides port 9447.
@@ -26,13 +28,13 @@ On first launch it copies `~/.config/vesktop` into `$VOXLAND_VERIFY_DIR/config` 
 ## Doctor
 
 ```bash
-curl -s localhost:${VOXLAND_CDP_PORT:-9447}/json | jq -r '.[] | select(.type=="page") | .url'   # expect https://discord.com/...
+curl -s localhost:${VOXLAND_CDP_PORT:-9447}/json | jq -r '.[] | select(.type=="page") | .url'   # expect https://discord.com/... (or canary./ptb.)
 node .claude/skills/verify-voxland-desktop/cdp.mjs eval 'typeof VesktopNative'                  # expect "object"
 ```
 
 ## Drive
 
-`cdp.mjs` attaches to the discord.com page:
+`cdp.mjs` attaches to the Discord page:
 
 ```bash
 C=.claude/skills/verify-voxland-desktop/cdp.mjs
@@ -42,15 +44,13 @@ node $C screenshot ~/.cache/voxland-verify/evidence/x.png
 node $C record out.mp4 10 '<js returning {x,y,width,height}>'   # run in the background, drive from another shell
 ```
 
-`picker-shots.mjs <outDir> ['<window title>']` renders the screen-share picker in five states (window, quiet window, screen, unknown, override open) from fixtures and saves each one cropped to the modal.
-
-`navigator.mediaDevices.getDisplayMedia()` called from `eval` takes the same path as Go Live: portal pick, Voxland's picker modal, venmic, and an audio track. Nothing reaches a Discord call. Feature recipes live in `features/`.
+`navigator.mediaDevices.getDisplayMedia()` called from `eval` takes the same path as Go Live: portal pick, Voxland's picker modal, venmic, and an audio track. Nothing reaches a Discord call. Feature recipes live in `features/`, indexed in `features/README.md`.
 
 ## Evidence
 
 Write to `~/.cache/voxland-verify/evidence/`, which survives cleanup. Capture the state before the action and the result after it. For audio routing, the result is the PipeWire links (`pw-dump`, `pw-link -l`) and the returned track labels; a screenshot alone does not prove routing. Open each PNG before claiming a visual result.
 
-A PR that changes what the app shows embeds before and after screenshots of the same states: before from `main`, after from the PR head. Build each with `VOXLAND_REPO=<checkout> launch.sh` and shoot both with the same script, for example `picker-shots.mjs`, so the pairs differ only by the change. A new state shows after only. A change to an interaction (opening, choosing, expanding) also links a short screen recording from `cdp.mjs record`.
+A PR that changes what the app shows embeds before and after screenshots of the same states: before from `main`, after from the PR head. Build each with `VOXLAND_REPO=<checkout> launch.sh` and shoot both with the same script so the pairs differ only by the change. A new state shows after only. A change to an interaction (opening, choosing, expanding) also links a short screen recording from `cdp.mjs record`.
 
 Crop every screenshot and recording to the surface under change. The Discord window around it shows other people's names and messages, so it never goes into a PR.
 

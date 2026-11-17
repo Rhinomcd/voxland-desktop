@@ -10,8 +10,8 @@ const port = process.env.VOXLAND_CDP_PORT ?? "9447";
 const [command, arg, arg2, arg3] = process.argv.slice(2);
 
 const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
-const page = targets.find(t => t.type === "page" && t.url.startsWith("https://discord.com"));
-if (!page) throw new Error(`no discord.com page on port ${port}`);
+const page = targets.find(t => t.type === "page" && /^https:\/\/([a-z]+\.)?discord\.com\//.test(t.url));
+if (!page) throw new Error(`no Discord page on port ${port}`);
 
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((resolve, reject) => {
@@ -24,7 +24,9 @@ const pending = new Map();
 ws.onmessage = ({ data }) => {
     const msg = JSON.parse(data);
     pending.get(msg.id)?.(msg);
+    pending.delete(msg.id);
 };
+ws.onclose = () => pending.forEach(settle => settle({ error: { message: "CDP socket closed" } }));
 const send = (method, params = {}) =>
     new Promise((resolve, reject) => {
         const id = ++nextId;
@@ -92,34 +94,39 @@ if (command === "eval") {
     await send("Page.stopScreencast");
     ws.removeEventListener("message", onFrame);
     if (arg3) await growCrop();
-    if (crop) {
-        crop.width = Math.min(crop.width, frames[0].width - crop.x);
-        crop.height = Math.min(crop.height, frames[0].height - crop.y);
-    }
-    if (!frames.length) throw new Error("no frames: the page did not repaint while recording");
+    try {
+        if (!frames.length) throw new Error("no frames: the page did not repaint while recording");
+        if (arg3 && !crop) throw new Error("the crop rect never resolved; refusing to write an uncropped recording");
+        if (crop) {
+            crop.width = Math.min(crop.width, frames[0].width - crop.x);
+            crop.height = Math.min(crop.height, frames[0].height - crop.y);
+            if (crop.width < 2 || crop.height < 2) throw new Error("the crop rect lies outside the page");
+        }
 
-    // frames arrive only when the page repaints, so each one is held until the next
-    const list = frames
-        .map((f, i) => `file '${f.file}'\nduration ${Math.max((frames[i + 1]?.time ?? f.time + 1) - f.time, 0.04)}`)
-        .join("\n");
-    writeFileSync(join(frameDir, "list.txt"), `${list}\nfile '${frames.at(-1).file}'\n`);
-    execFileSync("ffmpeg", [
-        "-loglevel",
-        "error",
-        "-y",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        join(frameDir, "list.txt"),
-        "-vf",
-        `${crop ? `crop=${Math.round(crop.width)}:${Math.round(crop.height)}:${Math.round(crop.x)}:${Math.round(crop.y)},` : ""}fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`,
-        "-c:v",
-        "libx264",
-        arg
-    ]);
-    rmSync(frameDir, { recursive: true });
+        // frames arrive only when the page repaints, so each one is held until the next
+        const list = frames
+            .map((f, i) => `file '${f.file}'\nduration ${Math.max((frames[i + 1]?.time ?? f.time + 1) - f.time, 0.04)}`)
+            .join("\n");
+        writeFileSync(join(frameDir, "list.txt"), `${list}\nfile '${frames.at(-1).file}'\n`);
+        execFileSync("ffmpeg", [
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            join(frameDir, "list.txt"),
+            "-vf",
+            `${crop ? `crop=${Math.round(crop.width)}:${Math.round(crop.height)}:${Math.round(crop.x)}:${Math.round(crop.y)},` : ""}fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`,
+            "-c:v",
+            "libx264",
+            arg
+        ]);
+    } finally {
+        rmSync(frameDir, { recursive: true, force: true });
+    }
     console.log(`${arg} (${frames.length} frames)`);
 } else {
     throw new Error("usage: cdp.mjs eval <js> | screenshot <file> | click <text> | record <file.mp4> <seconds>");

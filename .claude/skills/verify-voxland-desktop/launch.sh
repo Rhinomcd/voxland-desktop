@@ -2,7 +2,7 @@
 # Builds the dev bundle and starts it on the host desktop with an isolated profile and a CDP port.
 # The profile is copied from ~/.config/vesktop on first launch so Discord is already logged in.
 set -euo pipefail
-repo=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
+repo=${VOXLAND_REPO:-$(git -C "$(dirname "$0")" rev-parse --show-toplevel)}
 state=${VOXLAND_VERIFY_DIR:-$HOME/.cache/voxland-verify}
 port=${VOXLAND_CDP_PORT:-9447}
 
@@ -15,6 +15,17 @@ if ss -ltn | grep -q ":$port "; then
     exit 1
 fi
 
+# keep the dev window off Ryan's screen: move it to a special workspace nobody looks at
+hide_windows() {
+    [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] || return 0
+    local pids address
+    pids=$(pgrep -P "$1" | paste -sd,)
+    [[ -n $pids ]] || return 0
+    for address in $(hyprctl clients -j | jq -r --argjson p "[$pids]" '.[] | select(.pid as $x | $p | index($x)) | .address'); do
+        hyprctl eval "hl.dispatch(hl.dsp.window.move({ workspace = 'special:voxverify', follow = false, window = 'address:$address' }))" >/dev/null
+    done
+}
+
 mkdir -p -m 700 "$state/config/vesktop" "$state/evidence"
 if [[ ! -d $state/config/vesktop/sessionData ]]; then
     (cd ~/.config/vesktop && cp -r settings settings.json state.json sessionData "$state/config/vesktop/")
@@ -23,11 +34,12 @@ fi
 
 (cd "$repo" && pnpm build:dev >/dev/null)
 cd "$repo"
-XDG_CONFIG_HOME=$state/config setsid node_modules/.bin/electron --remote-debugging-port="$port" . >"$state/app.log" 2>&1 &
+XDG_CONFIG_HOME=$state/config setsid node_modules/.bin/electron --remote-debugging-port="$port" "$@" . >"$state/app.log" 2>&1 &
 echo $! >"$state/pid"
 
 for _ in $(seq 60); do
     if curl -s "localhost:$port/json" | grep -q '"url": "https://discord.com'; then
+        hide_windows "$(cat "$state/pid")"
         echo "ready: pid $(cat "$state/pid"), cdp $port, log $state/app.log"
         exit 0
     fi

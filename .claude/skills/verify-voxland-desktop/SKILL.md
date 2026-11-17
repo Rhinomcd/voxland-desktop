@@ -10,6 +10,7 @@ The app is an Electron shell around discord.com. Screen share on Wayland goes th
 ## Rules for Ryan's desktop
 
 - Never open the interactive portal picker. Ryan's `custom_picker_binary` is `~/.local/bin/xdph-picker`, which skips the prompt for each window title queued in `~/.local/state/obs-runescape/pick-queue`. Queue exactly one title per share request, right before the request. obs-runescape uses the same queue, so check it is empty first.
+- Go Live (starting capture) makes a second portal request, so queue two titles per share that you take live, or the second one opens the interactive picker. Prefer proving UI without sharing at all: `Vesktop.Components.ScreenShare.openScreenSharePicker(screens, true, target)` renders the picker from fixtures with no portal request.
 - If a share request gets cancelled, do not retry it. Run `stop.sh`.
 - Sharing a whole monitor has no queue path. Ask Ryan in the thread before driving that case.
 
@@ -18,6 +19,8 @@ The app is an Electron shell around discord.com. Screen share on Wayland goes th
 ```bash
 .claude/skills/verify-voxland-desktop/launch.sh   # builds dev, prints "ready: pid …, cdp 9447, log …"
 ```
+
+On Hyprland it moves the dev window to the hidden `special:voxverify` workspace so it never covers Ryan's screen. Extra arguments go to Electron. `VOXLAND_REPO=<worktree>` builds and runs another checkout; `VOXLAND_VERIFY_DIR` gives it its own profile dir.
 
 On first launch it copies `~/.config/vesktop` into `~/.cache/voxland-verify/config` so Discord is already logged in. `XDG_CONFIG_HOME` keeps the copy separate, so it runs beside Ryan's Vesktop. Set `VOXLAND_CDP_PORT` if 9447 is taken; grok-bot holds 9333.
 

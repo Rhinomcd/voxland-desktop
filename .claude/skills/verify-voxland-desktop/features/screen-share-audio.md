@@ -28,10 +28,10 @@ Targets: `{ kind: "window", ... }`, `{ kind: "screen" }`, or `null` (unknown, sh
 
 All five states at once, cropped to the modal: `node .claude/skills/verify-voxland-desktop/picker-shots.mjs <outDir> '<title of a window that plays audio>'`.
 
-Record the override opening, cropped to the modal:
+Record the override opening, cropped to the modal (the recorder unions the rect over every frame, so a taller expanded modal stays in view):
 
 ```bash
-MODAL='(() => { const t = [...document.querySelectorAll("[role=dialog] h1")].find(h => h.textContent.trim() === "Screen Share Picker"); const r = t.closest("[class*=\"container_\"][class*=\"size-\"]").getBoundingClientRect(); return { x: r.x - 8, y: r.y - 8, width: r.width + 16, height: r.height + 16 }; })()'
+MODAL='(() => { const t = [...document.querySelectorAll("[role=dialog] h1")].find(h => h.textContent.trim() === "Screen Share Picker"); if (!t) return null; const r = t.closest("[class*=\"container_\"][class*=\"size-\"]").getBoundingClientRect(); return { x: r.x - 8, y: r.y - 8, width: r.width + 16, height: r.height + 16 }; })()'
 node $C record override.mp4 10 "$MODAL" &
 node $C eval 'void Vesktop.Components.ScreenShare.openScreenSharePicker([{ id: "window:1:0", name: "Game", url: "" }], true, { kind: "screen" }); 0'
 sleep 2; node $C click Change; wait

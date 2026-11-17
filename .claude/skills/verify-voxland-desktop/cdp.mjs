@@ -4,7 +4,8 @@
 //        cdp.mjs screenshot <file.png>
 //        cdp.mjs click '<button text>'   clicks the last visible button with exactly that text
 //        cdp.mjs record <file.mp4> <seconds> ['<js returning {x,y,width,height}>']
-//            screen-records the page while another shell drives it; the optional rect, read when recording ends, crops it
+//            screen-records the page while another shell drives it; the optional rect is read on every frame and the
+//            video is cropped to their union, so it can return null while the surface is absent
 const port = process.env.VOXLAND_CDP_PORT ?? "9447";
 const [command, arg, arg2, arg3] = process.argv.slice(2);
 
@@ -65,21 +66,36 @@ if (command === "eval") {
 
     const frameDir = mkdtempSync(join(tmpdir(), "cdp-record-"));
     const frames = [];
+    let crop = null;
+    const growCrop = async () => {
+        const r = await evaluate(arg3).catch(() => null);
+        if (!r) return;
+        const right = Math.max(r.x + r.width, crop ? crop.x + crop.width : -Infinity);
+        const bottom = Math.max(r.y + r.height, crop ? crop.y + crop.height : -Infinity);
+        const x = Math.max(0, Math.min(r.x, crop?.x ?? Infinity));
+        const y = Math.max(0, Math.min(r.y, crop?.y ?? Infinity));
+        crop = { x, y, width: right - x, height: bottom - y };
+    };
     const onFrame = ({ data: raw }) => {
         const msg = JSON.parse(raw);
         if (msg.method !== "Page.screencastFrame") return;
         const { data, sessionId, metadata } = msg.params;
         const file = join(frameDir, `${String(frames.length).padStart(5, "0")}.png`);
         writeFileSync(file, Buffer.from(data, "base64"));
-        frames.push({ file, time: metadata.timestamp });
+        frames.push({ file, time: metadata.timestamp, width: metadata.deviceWidth, height: metadata.deviceHeight });
         ws.send(JSON.stringify({ id: ++nextId, method: "Page.screencastFrameAck", params: { sessionId } }));
+        if (arg3) void growCrop();
     };
     ws.addEventListener("message", onFrame);
     await send("Page.startScreencast", { format: "png", everyNthFrame: 1 });
     await new Promise(resolve => setTimeout(resolve, Number(arg2 ?? 10) * 1000));
     await send("Page.stopScreencast");
     ws.removeEventListener("message", onFrame);
-    const crop = arg3 ? await evaluate(arg3) : null;
+    if (arg3) await growCrop();
+    if (crop) {
+        crop.width = Math.min(crop.width, frames[0].width - crop.x);
+        crop.height = Math.min(crop.height, frames[0].height - crop.y);
+    }
     if (!frames.length) throw new Error("no frames: the page did not repaint while recording");
 
     // frames arrive only when the page repaints, so each one is held until the next

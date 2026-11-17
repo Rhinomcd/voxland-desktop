@@ -40,9 +40,11 @@ node .claude/skills/verify-voxland-desktop/cdp.mjs eval 'typeof VesktopNative'  
 C=.claude/skills/verify-voxland-desktop/cdp.mjs
 node $C eval '<js expression, awaited>'
 node $C click 'Go Live'                     # last visible button with that exact text
-node $C screenshot "$VOXLAND_VERIFY_DIR/evidence/x.png" '<js returning a rect or DOMRect>'   # cropped to the rect
-node $C record out.mp4 10 '<js returning a rect or DOMRect>'   # run in the background, drive from another shell; keeps only frames where the rect is visible
+node $C screenshot "${VOXLAND_VERIFY_DIR:-$HOME/.cache/voxland-verify}/evidence/x.png" '<rect>'   # cropped to the rect
+node $C record out.mp4 10 '<rect>'   # run in the background, drive from another shell
 ```
+
+A `<rect>` is one JS expression that yields `{x,y,width,height}` in CSS px or a DOMRect, such as `document.querySelector("[role=dialog]")?.getBoundingClientRect()`. `record` samples it around every frame, drops frames painted while it was absent, and blacks out everything outside it, so a surface that moves or grows never reveals what lies around it. Step through a recording's frames before linking it, as with screenshots.
 
 `picker-shots.mjs <outDir> ['<window title>']` renders the screen-share picker in five states (window, quiet window, screen, unknown, override open) from fixtures and saves each one cropped to the modal.
 

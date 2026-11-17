@@ -136,9 +136,9 @@ async function getPipeWireClients() {
 }
 
 function isListedNode(node: Node, deviceSelect: boolean) {
-    if (!node["media.class"]?.includes("Audio")) return false;
     if (node["node.name"]?.startsWith("venmic-loopback")) return false;
-    return deviceSelect || !node["device.id"];
+    if (deviceSelect) return !!node["media.class"]?.includes("Audio");
+    return node["media.class"] === "Stream/Output/Audio" && !node["device.id"];
 }
 
 interface AppGroup {
@@ -189,15 +189,17 @@ async function listAudioApps(nodes: Node[]): Promise<AudioApp[]> {
         groups.set(key, group);
     }
 
+    const windowTitles = new Map<string, string>();
     const apps = [...groups].map(([id, { nodes, pids, binary, window }]): AudioApp => {
         const [first] = nodes;
         const appName = first["application.name"];
         const alsaName = appName?.match(/^PipeWire ALSA \[(.+)\]$/)?.[1];
-        const meaningfulName = appName && !alsaName && appName !== binary ? appName : undefined;
+        const appLabel = appName && !alsaName ? appName.charAt(0).toUpperCase() + appName.slice(1) : undefined;
+        if (window?.title) windowTitles.set(id, window.title);
 
         const label =
             (first["device.id"] && first["node.description"]) ||
-            meaningfulName ||
+            appLabel ||
             window?.title ||
             binary ||
             alsaName ||
@@ -225,8 +227,13 @@ async function listAudioApps(nodes: Node[]): Promise<AudioApp[]> {
     const labelCounts = new Map<string, number>();
     for (const { label } of apps) labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
 
+    const disambiguate = (a: AudioApp) =>
+        windowTitles.has(a.id) && windowTitles.get(a.id) !== a.label
+            ? `${a.label}: ${windowTitles.get(a.id)}`
+            : `${a.label} (${a.pids[0]})`;
+
     return apps
-        .map(a => (labelCounts.get(a.label)! > 1 && a.pids.length ? { ...a, label: `${a.label} (${a.pids[0]})` } : a))
+        .map(a => (labelCounts.get(a.label)! > 1 && a.pids.length ? { ...a, label: disambiguate(a) } : a))
         .sort((a, b) => a.label.localeCompare(b.label));
 }
 

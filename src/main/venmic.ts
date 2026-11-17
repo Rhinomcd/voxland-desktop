@@ -259,8 +259,11 @@ async function resolveLinkData(request: AudioRequest, venmic: PatchBayType): Pro
             return null;
         case "system":
             return buildLinkData({ exclude: matchersOf(request.exclude) });
-        case "apps":
-            return buildLinkData({ include: matchersOf(request.apps) });
+        case "apps": {
+            // venmic treats an empty include list as "everything"
+            const include = matchersOf(request.apps);
+            return include.length ? buildLinkData({ include }) : null;
+        }
         case "window": {
             if (!sharedWindowPid) return null;
             const pids = withDescendants(sharedWindowPid, await getParentPids());

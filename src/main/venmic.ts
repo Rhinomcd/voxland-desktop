@@ -112,6 +112,8 @@ interface PipeWireClient {
     binary?: string;
 }
 
+let warnedAboutPwDump = false;
+
 async function getPipeWireClients() {
     const clients = new Map<string, PipeWireClient>();
 
@@ -130,7 +132,8 @@ async function getPipeWireClients() {
             });
         }
     } catch (e) {
-        console.warn("pw-dump failed, audio sources will lack per-process info", e);
+        if (!warnedAboutPwDump) console.warn("pw-dump failed; apps that put no pid on their nodes can't be matched", e);
+        warnedAboutPwDump = true;
         return null;
     }
 
@@ -253,14 +256,42 @@ function appIdOf(pid: number, processes: Map<number, ProcessInfo>) {
     return `pid:${pid}@${processes.get(pid)?.start ?? ""}`;
 }
 
-function isStillRunning(appId: string, processes: Map<number, ProcessInfo>) {
-    const [, pid, start] = appId.match(/^pid:(\d+)@(.*)$/) ?? [];
-    // no start time means the process is outside our pid namespace, so it can't be checked
-    return !pid || !start || processes.get(Number(pid))?.start === start;
+interface KnownApp {
+    app: AudioApp;
+    /** start time of each pid when it was seen; undefined when /proc couldn't show it */
+    starts: Map<number, string | undefined>;
 }
 
-/** Apps seen while picking, so a choice survives the app going quiet; dropped once its process exits. */
-const knownApps = new Map<string, AudioApp>();
+/** Apps seen while picking, so a choice survives the app going quiet; each pid is dropped once it exits. */
+const knownApps = new Map<string, KnownApp>();
+
+function isSameProcess(pid: number, start: string | undefined, processes: Map<number, ProcessInfo>) {
+    // an unreadable pid (another pid namespace, hidepid) is trusted only while it stays unreadable
+    return processes.get(pid)?.start === start;
+}
+
+function rememberApps(apps: AudioApp[], processes: Map<number, ProcessInfo>) {
+    for (const app of apps) {
+        knownApps.set(app.id, { app, starts: new Map(app.pids.map(pid => [pid, processes.get(pid)?.start])) });
+    }
+    for (const [id, { starts }] of knownApps) {
+        if (![...starts].some(([pid, start]) => isSameProcess(pid, start, processes)) && starts.size) {
+            knownApps.delete(id);
+        }
+    }
+}
+
+/** Matchers for an app that went quiet: its live pids, plus client ids only where over-matching is harmless. */
+function rememberedMatchers(id: string, processes: Map<number, ProcessInfo>, keepClientIds: boolean) {
+    const known = knownApps.get(id);
+    if (!known) return [];
+
+    return known.app.match.filter(m => {
+        if (m["client.id"]) return keepClientIds;
+        const pid = Number(m["application.process.id"]);
+        return !pid || isSameProcess(pid, known.starts.get(pid), processes);
+    });
+}
 
 async function takeSnapshot(venmic: PatchBayType) {
     const nodes = venmic.list([]);
@@ -270,13 +301,9 @@ async function takeSnapshot(venmic: PatchBayType) {
         getProcesses()
     ]);
     const apps = groupAudioApps(nodes, clients ?? new Map(), windows ?? [], processes);
+    rememberApps(apps, processes);
 
-    for (const a of apps) knownApps.set(a.id, a);
-    for (const id of knownApps.keys()) {
-        if (!isStillRunning(id, processes)) knownApps.delete(id);
-    }
-
-    return { nodes, apps, windows: windows ?? [], processes, complete: clients !== null && windows !== null };
+    return { nodes, apps, windows, processes, hasClients: clients !== null };
 }
 
 type Snapshot = Awaited<ReturnType<typeof takeSnapshot>>;
@@ -293,23 +320,26 @@ function sortedMatches(matches: Node[]) {
  * always goes through, because the renderer only looks for the virtual mic once, right after Go Live.
  */
 function resolveLinkData(request: AudioRequest, snapshot: Snapshot): LinkData | null {
-    if (!snapshot.complete && activeData) return null;
-
     const current = new Map(snapshot.apps.map(a => [a.id, a]));
-    // an app that went quiet keeps its pid matchers; its client ids may belong to other apps by now
-    const matchersOf = (ids: string[]) =>
-        ids.flatMap(id => current.get(id)?.match ?? knownApps.get(id)?.match.filter(m => !m["client.id"]) ?? []);
+    const matchersOf = (ids: string[], keepClientIds: boolean) =>
+        ids.flatMap(id => current.get(id)?.match ?? rememberedMatchers(id, snapshot.processes, keepClientIds));
     const including = (matches: Node[]) =>
         buildLinkData({ include: matches.length ? sortedMatches(matches) : MATCH_NOTHING });
+    // without the lookup a request depends on, keep the current link, or start silent if there is none yet
+    const unresolvable = () => (activeData ? null : including([]));
 
     switch (request.kind) {
         case "none":
             return including([]);
         case "system":
-            return buildLinkData({ exclude: sortedMatches(matchersOf(request.exclude)) });
+            if (request.exclude.length && !snapshot.hasClients) return unresolvable();
+            // a reused client id here can only leave out too much, never share too much
+            return buildLinkData({ exclude: sortedMatches(matchersOf(request.exclude, true)) });
         case "apps":
-            return including(matchersOf(request.apps));
+            return including(matchersOf(request.apps, false));
         case "window": {
+            if (!snapshot.windows) return unresolvable();
+
             const { pid, address } = request.window;
             if (!snapshot.windows.some(w => w.address === address && w.pid === pid)) return including([]);
 

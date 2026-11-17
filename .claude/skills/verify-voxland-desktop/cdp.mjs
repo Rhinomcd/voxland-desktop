@@ -26,7 +26,8 @@ if (command === "eval") {
     console.log(JSON.stringify(await evaluate(arg), null, 2));
 } else if (command === "screenshot") {
     const rect = arg2 && (await evaluate(rectSource(arg2)));
-    if (arg2 && !rect) throw new Error("the crop rect did not resolve to a visible area; refusing to write an uncropped screenshot");
+    if (arg2 && !rect)
+        throw new Error("the crop rect did not resolve to a visible area; refusing to write an uncropped screenshot");
     const clip = rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 };
     const { data } = await send("Page.captureScreenshot", { format: "png", ...(clip && { clip }) });
     if (rect) {
@@ -47,10 +48,13 @@ if (command === "eval") {
     console.log(`clicked "${arg}"`);
 } else if (command === "record") {
     const seconds = Number(arg2 ?? 10);
-    if (!arg || !(seconds > 0 && Number.isFinite(seconds))) throw new Error("usage: cdp.mjs record <file.mp4> <seconds> [rect]");
+    if (!arg || !(seconds > 0 && Number.isFinite(seconds)))
+        throw new Error("usage: cdp.mjs record <file.mp4> <seconds> [rect]");
     await record(arg, seconds, arg3);
 } else {
-    throw new Error("usage: cdp.mjs eval <js> | screenshot <file> [rect] | click <text> | record <file.mp4> <seconds> [rect]");
+    throw new Error(
+        "usage: cdp.mjs eval <js> | screenshot <file> [rect] | click <text> | record <file.mp4> <seconds> [rect]"
+    );
 }
 ws.close();
 
@@ -84,8 +88,10 @@ async function record(file, seconds, rectExpression) {
     const stopSampling = () => (rectExpression ? evaluate(`delete window.${key}`).catch(() => {}) : null);
 
     const frameDir = mkdtempSync(join(tmpdir(), "cdp-record-"));
-    const cleanUp = () => Promise.resolve(stopSampling()).then(() => rmSync(frameDir, { recursive: true, force: true }));
-    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, () => cleanUp().then(() => process.exit(1)));
+    const cleanUp = () =>
+        Promise.resolve(stopSampling()).then(() => rmSync(frameDir, { recursive: true, force: true }));
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
+        process.once(signal, () => cleanUp().then(() => process.exit(1)));
     const frames = [];
     let frameError = null;
     // a throw inside a socket listener would kill the process before any cleanup, so it is held until the capture ends
@@ -114,7 +120,8 @@ async function record(file, seconds, rectExpression) {
         if (frameError) throw frameError;
         const samples = rectExpression ? await evaluate(`window.${key}`).catch(() => null) : null;
         await stopSampling();
-        if (rectExpression && !Array.isArray(samples)) throw new Error("the rect samples were lost (the page reloaded?); refusing to write an unmasked recording");
+        if (rectExpression && !Array.isArray(samples))
+            throw new Error("the rect samples were lost (the page reloaded?); refusing to write an unmasked recording");
         if (!frames.length) throw new Error("no frames: the page did not repaint while recording");
 
         for (const [i, f] of frames.entries()) {
@@ -149,7 +156,21 @@ async function record(file, seconds, rectExpression) {
         const list = frames.map(f => `file '${f.path}'\nduration ${f.duration}`).join("\n");
         writeFileSync(join(frameDir, "list.txt"), `${list}\nfile '${frames.at(-1).path}'\n`);
         const total = frames.reduce((sum, f) => sum + f.duration, 0);
-        ffmpeg("-f", "concat", "-safe", "0", "-i", join(frameDir, "list.txt"), "-vf", `fps=30,scale=${size},scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`, "-c:v", "libx264", "-t", String(total), file);
+        ffmpeg(
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            join(frameDir, "list.txt"),
+            "-vf",
+            `fps=30,scale=${size},scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`,
+            "-c:v",
+            "libx264",
+            "-t",
+            String(total),
+            file
+        );
         console.log(`${file} (${frames.length} frames, ${frames.length - shown.length} blacked out)`);
     } finally {
         await cleanUp();
@@ -165,7 +186,12 @@ function coveredBox(samples, frame, skew = 0.05) {
     if (!bracketed || near.some(s => !s.rect)) return null;
     const scaled = near.map(({ rect }) => {
         const scale = frame.width / rect.viewport;
-        return { x: rect.x * scale, y: rect.y * scale, right: (rect.x + rect.width) * scale, bottom: (rect.y + rect.height) * scale };
+        return {
+            x: rect.x * scale,
+            y: rect.y * scale,
+            right: (rect.x + rect.width) * scale,
+            bottom: (rect.y + rect.height) * scale
+        };
     });
     const x = Math.ceil(Math.max(...scaled.map(r => r.x)));
     const y = Math.ceil(Math.max(...scaled.map(r => r.y)));

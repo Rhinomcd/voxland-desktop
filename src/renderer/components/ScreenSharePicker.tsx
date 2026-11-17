@@ -461,6 +461,11 @@ function toggleApp(picked: AudioApp[], app: AudioApp) {
     return picked.some(p => p.id === app.id) ? picked.filter(p => p.id !== app.id) : [...picked, app];
 }
 
+/** Keeps picked apps listed after they go quiet, so they can still be unpicked. */
+function withPicked(apps: AudioApp[], picked: AudioApp[]) {
+    return [...apps, ...picked.filter(p => !apps.some(a => a.id === p.id))];
+}
+
 interface AudioPickerProps {
     list: AudioAppList | null;
     target: CaptureTarget | null;
@@ -548,7 +553,7 @@ function AudioPickerLinuxBody({ list, target, choice, setChoice }: AudioPickerPr
             : []),
         { label: "All system audio", value: "system" },
         { label: "No audio", value: "none" },
-        ...apps.map(a => ({ label: a.label, value: a }))
+        ...withPicked(apps, choice.kind === "apps" ? choice.apps : []).map(a => ({ label: a.label, value: a }))
     ];
 
     const isSourceSelected = (value: AudioOption) => {
@@ -616,7 +621,10 @@ function AudioPickerLinuxBody({ list, target, choice, setChoice }: AudioPickerPr
                                 </Heading>
                                 <SimpleErrorBoundary>
                                     <Select
-                                        options={apps.map(a => ({ label: a.label, value: a }))}
+                                        options={withPicked(apps, choice.exclude).map(a => ({
+                                            label: a.label,
+                                            value: a
+                                        }))}
                                         isSelected={(a: AudioApp) => choice.exclude.some(e => e.id === a.id)}
                                         select={(a: AudioApp) =>
                                             setChoice({ kind: "system", exclude: toggleApp(choice.exclude, a) })

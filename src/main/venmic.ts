@@ -191,6 +191,7 @@ function groupAudioApps(
         const group = groups.get(key) ?? { nodes: [], pids: new Set() };
         group.nodes.push(node);
         if (pid && !isDevice) group.pids.add(pid);
+        if (window) group.pids.add(window.pid);
         group.window ??= window;
         group.binary ??= node["application.process.binary"] ?? fromClient?.binary;
         groups.set(key, group);
@@ -375,6 +376,12 @@ function linkedNodes(data: LinkData, nodes: Node[]) {
         .join(",");
 }
 
+function narrowsInclude(from: Node[], to: Node[]) {
+    if (!from.length) return to.length > 0;
+    const kept = new Set(to.map(m => JSON.stringify(m)));
+    return from.some(m => !kept.has(JSON.stringify(m)));
+}
+
 let activeRequest: AudioRequest | null = null;
 let activeData: LinkData | null = null;
 let refreshTimer: NodeJS.Timeout | undefined;
@@ -392,9 +399,12 @@ async function applyActiveRequest(venmic: PatchBayType) {
     if (!data) return;
 
     // venmic.link() tears down every link first and links new nodes under the current options by itself, so
-    // relink only when a node would change sides, or to drop filters a reused pid could otherwise match
-    const goingSilent = data.include === MATCH_NOTHING && activeData?.include !== MATCH_NOTHING;
-    if (activeData && !goingSilent && linkedNodes(activeData, snapshot.nodes) === linkedNodes(data, snapshot.nodes))
+    // relink only when a node would change sides, or to drop filters a reused pid or client id could otherwise match
+    if (
+        activeData &&
+        !narrowsInclude(activeData.include, data.include) &&
+        linkedNodes(activeData, snapshot.nodes) === linkedNodes(data, snapshot.nodes)
+    )
         return;
 
     venmic.link(data);

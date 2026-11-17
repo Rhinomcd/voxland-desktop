@@ -22,6 +22,7 @@ ws.onclose = () => pending.forEach(settle => settle({ error: { message: "CDP soc
 
 export const send = (method, params = {}) =>
     new Promise((resolve, reject) => {
+        if (ws.readyState !== WebSocket.OPEN) return reject(new Error("CDP socket closed"));
         const id = ++nextId;
         pending.set(id, msg => (msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)));
         ws.send(JSON.stringify({ id, method, params }));

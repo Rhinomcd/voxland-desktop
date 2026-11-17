@@ -29,6 +29,11 @@ if (command === "eval") {
     if (arg2 && !rect) throw new Error("the crop rect did not resolve to a visible area; refusing to write an uncropped screenshot");
     const clip = rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 };
     const { data } = await send("Page.captureScreenshot", { format: "png", ...(clip && { clip }) });
+    if (rect) {
+        const after = await evaluate(rectSource(arg2));
+        const same = after && ["x", "y", "width", "height"].every(k => Math.abs(after[k] - rect[k]) < 0.5);
+        if (!same) throw new Error("the surface moved or closed during the screenshot; nothing was written");
+    }
     (await import("fs")).writeFileSync(arg, Buffer.from(data, "base64"));
     console.log(arg);
 } else if (command === "click") {
@@ -54,27 +59,31 @@ async function record(file, seconds, rectExpression) {
     const { join } = await import("path");
     const ffmpeg = (...args) => execFileSync("ffmpeg", ["-loglevel", "error", "-y", ...args]);
 
+    const key = `__voxlandRectSamples_${process.pid}_${Date.now()}`;
     if (rectExpression) {
         await evaluate(rectSource(rectExpression)); // surfaces a broken expression before recording
-        // a tick element repaints every frame, so a still surface keeps producing frames that can show it
+        // a tick element repaints every frame, so a still surface keeps producing frames that can show it; samples use
+        // Date.now(), the clock behind screencast timestamps
         await evaluate(`(() => {
-            const samples = (window.__voxlandRectSamples = []);
+            const samples = (window.${key} = []);
             const tick = document.body.appendChild(document.createElement("div"));
             tick.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;pointer-events:none;z-index:2147483647";
             const sample = () => {
-                if (window.__voxlandRectSamples !== samples) return tick.remove();
+                if (window.${key} !== samples) return tick.remove();
                 tick.style.background = samples.length % 2 ? "rgba(0,0,0,.01)" : "rgba(0,0,0,.02)";
                 let rect = null;
                 try { rect = ${rectSource(rectExpression)}; } catch {}
-                samples.push({ time: (performance.timeOrigin + performance.now()) / 1000, rect });
+                samples.push({ time: Date.now() / 1000, rect });
                 requestAnimationFrame(sample);
             };
             sample();
         })()`);
     }
-    const stopSampling = () => (rectExpression ? evaluate(`window.__voxlandRectSamples = undefined`).catch(() => {}) : null);
+    const stopSampling = () => (rectExpression ? evaluate(`delete window.${key}`).catch(() => {}) : null);
 
     const frameDir = mkdtempSync(join(tmpdir(), "cdp-record-"));
+    const cleanUp = () => Promise.resolve(stopSampling()).then(() => rmSync(frameDir, { recursive: true, force: true }));
+    for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => cleanUp().then(() => process.exit(1)));
     const frames = [];
     const onFrame = ({ data: raw }) => {
         const msg = JSON.parse(raw);
@@ -94,7 +103,9 @@ async function record(file, seconds, rectExpression) {
         ws.removeEventListener("message", onFrame);
         const stopTime = Date.now() / 1000;
         await send("Page.stopScreencast");
-        const samples = rectExpression ? await evaluate(`window.__voxlandRectSamples`) : null;
+        const samples = rectExpression ? await evaluate(`window.${key}`).catch(() => null) : null;
+        await stopSampling();
+        if (rectExpression && !Array.isArray(samples)) throw new Error("the rect samples were lost (the page reloaded?); refusing to write an unmasked recording");
         if (!frames.length) throw new Error("no frames: the page did not repaint while recording");
 
         for (const [i, f] of frames.entries()) {
@@ -105,6 +116,7 @@ async function record(file, seconds, rectExpression) {
         const shown = frames.filter(f => f.box);
         if (!shown.length) throw new Error("the crop rect never resolved; refusing to write an uncropped recording");
 
+        let size = `${frames[0].width}:${frames[0].height}`;
         if (samples) {
             // each frame is cut to its own box and padded to the union, so nothing outside the surface is ever shown
             const union = {
@@ -113,7 +125,7 @@ async function record(file, seconds, rectExpression) {
                 right: Math.max(...shown.map(f => f.box.x + f.box.width)),
                 bottom: Math.max(...shown.map(f => f.box.y + f.box.height))
             };
-            const size = `${union.right - union.x}:${union.bottom - union.y}`;
+            size = `${union.right - union.x}:${union.bottom - union.y}`;
             for (const f of frames) {
                 const masked = f.path.replace(/\.png$/, "-masked.png");
                 const filter = f.box
@@ -128,23 +140,21 @@ async function record(file, seconds, rectExpression) {
         const list = frames.map(f => `file '${f.path}'\nduration ${f.duration}`).join("\n");
         writeFileSync(join(frameDir, "list.txt"), `${list}\nfile '${frames.at(-1).path}'\n`);
         const total = frames.reduce((sum, f) => sum + f.duration, 0);
-        ffmpeg("-f", "concat", "-safe", "0", "-i", join(frameDir, "list.txt"), "-vf", "fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p", "-c:v", "libx264", "-t", String(total), file);
+        ffmpeg("-f", "concat", "-safe", "0", "-i", join(frameDir, "list.txt"), "-vf", `fps=30,scale=${size},scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`, "-c:v", "libx264", "-t", String(total), file);
         console.log(`${file} (${frames.length} frames, ${frames.length - shown.length} blacked out)`);
     } finally {
-        await stopSampling();
-        rmSync(frameDir, { recursive: true, force: true });
+        await cleanUp();
     }
 }
 
-// The area the surface covered in every rect sample near the frame's timestamp, in that frame's device px, rounded
-// inward; null if it was absent from any of them or covers under 2px. The window spans the samples on both sides of the
-// paint, widened to absorb skew between the renderer's and the browser's clocks.
+// The area the surface covered in every rect sample within `skew` of the frame's timestamp, in that frame's device px,
+// rounded inward. Null unless samples bracket the frame on both sides (a long task or clock jump leaves it unbracketed),
+// the surface is in all of them, and the overlap is at least 2px.
 function coveredBox(samples, frame, skew = 0.05) {
-    const before = samples.findLast(s => s.time < frame.time - skew);
-    const near = samples.filter(s => s.time >= frame.time - skew && s.time <= frame.time + skew);
-    const group = before ? [before, ...near] : near;
-    if (!group.length || group.some(s => !s.rect)) return null;
-    const scaled = group.map(({ rect }) => {
+    const near = samples.filter(s => Math.abs(s.time - frame.time) <= skew);
+    const bracketed = near.some(s => s.time <= frame.time) && near.some(s => s.time >= frame.time);
+    if (!bracketed || near.some(s => !s.rect)) return null;
+    const scaled = near.map(({ rect }) => {
         const scale = frame.width / rect.viewport;
         return { x: rect.x * scale, y: rect.y * scale, right: (rect.x + rect.width) * scale, bottom: (rect.y + rect.height) * scale };
     });

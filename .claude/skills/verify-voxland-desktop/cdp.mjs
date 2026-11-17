@@ -25,6 +25,7 @@ ws.onmessage = ({ data }) => {
     const msg = JSON.parse(data);
     pending.get(msg.id)?.(msg);
 };
+ws.onclose = () => pending.forEach(settle => settle({ error: { message: "CDP socket closed" } }));
 const send = (method, params = {}) =>
     new Promise((resolve, reject) => {
         const id = ++nextId;

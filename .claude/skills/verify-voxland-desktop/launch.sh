@@ -45,6 +45,7 @@ XDG_CONFIG_HOME=$state/config setsid node_modules/.bin/electron --remote-debuggi
 echo $! >"$state/pid"
 
 for _ in $(seq 60); do
+    kill -0 "$(cat "$state/pid")" 2>/dev/null || break
     if curl -s "localhost:$port/json" | grep -q '"url": "https://discord.com'; then
         move_to_headless_output "$(cat "$state/pid")"
         echo "ready: pid $(cat "$state/pid"), cdp $port, log $state/app.log"
@@ -53,4 +54,5 @@ for _ in $(seq 60); do
     sleep 1
 done
 echo "discord page never loaded; see $state/app.log" >&2
+tail -n 20 "$state/app.log" >&2
 exit 1

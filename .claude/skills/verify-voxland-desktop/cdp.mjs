@@ -39,14 +39,16 @@ if (command === "eval") {
 } else if (command === "click") {
     const clicked = await evaluate(`(() => {
         const buttons = [...document.querySelectorAll("button, [role=button]")]
-            .filter(b => b.textContent.trim() === ${JSON.stringify(arg)} && b.offsetParent);
+            .filter(b => b.textContent.trim() === ${JSON.stringify(arg)} && b.checkVisibility());
         buttons.at(-1)?.click();
         return buttons.length;
     })()`);
     if (!clicked) throw new Error(`no visible button "${arg}"`);
     console.log(`clicked "${arg}"`);
 } else if (command === "record") {
-    await record(arg, Number(arg2 ?? 10), arg3);
+    const seconds = Number(arg2 ?? 10);
+    if (!(seconds > 0)) throw new Error("usage: cdp.mjs record <file.mp4> <seconds> [rect]");
+    await record(arg, seconds, arg3);
 } else {
     throw new Error("usage: cdp.mjs eval <js> | screenshot <file> [rect] | click <text> | record <file.mp4> <seconds> [rect]");
 }
@@ -83,16 +85,22 @@ async function record(file, seconds, rectExpression) {
 
     const frameDir = mkdtempSync(join(tmpdir(), "cdp-record-"));
     const cleanUp = () => Promise.resolve(stopSampling()).then(() => rmSync(frameDir, { recursive: true, force: true }));
-    for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => cleanUp().then(() => process.exit(1)));
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, () => cleanUp().then(() => process.exit(1)));
     const frames = [];
+    let frameError = null;
+    // a throw inside a socket listener would kill the process before any cleanup, so it is held until the capture ends
     const onFrame = ({ data: raw }) => {
         const msg = JSON.parse(raw);
-        if (msg.method !== "Page.screencastFrame") return;
+        if (msg.method !== "Page.screencastFrame" || frameError) return;
         const { data, sessionId, metadata } = msg.params;
-        const png = Buffer.from(data, "base64");
-        const path = join(frameDir, `${String(frames.length).padStart(5, "0")}.png`);
-        writeFileSync(path, png);
-        frames.push({ path, time: metadata.timestamp, width: png.readUInt32BE(16), height: png.readUInt32BE(20) });
+        try {
+            const png = Buffer.from(data, "base64");
+            const path = join(frameDir, `${String(frames.length).padStart(5, "0")}.png`);
+            writeFileSync(path, png);
+            frames.push({ path, time: metadata.timestamp, width: png.readUInt32BE(16), height: png.readUInt32BE(20) });
+        } catch (error) {
+            frameError = error;
+        }
         send("Page.screencastFrameAck", { sessionId }).catch(() => {});
     };
     try {
@@ -103,6 +111,7 @@ async function record(file, seconds, rectExpression) {
         ws.removeEventListener("message", onFrame);
         const stopTime = Date.now() / 1000;
         await send("Page.stopScreencast");
+        if (frameError) throw frameError;
         const samples = rectExpression ? await evaluate(`window.${key}`).catch(() => null) : null;
         await stopSampling();
         if (rectExpression && !Array.isArray(samples)) throw new Error("the rect samples were lost (the page reloaded?); refusing to write an unmasked recording");

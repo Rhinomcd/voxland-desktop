@@ -3,8 +3,10 @@
 // Usage: cdp.mjs eval '<expression>'     prints the awaited JSON result
 //        cdp.mjs screenshot <file.png>
 //        cdp.mjs click '<button text>'   clicks the last visible button with exactly that text
+//        cdp.mjs record <file.mp4> <seconds> ['<js returning {x,y,width,height}>']
+//            screen-records the page while another shell drives it; the optional rect, read when recording ends, crops it
 const port = process.env.VOXLAND_CDP_PORT ?? "9447";
-const [command, arg] = process.argv.slice(2);
+const [command, arg, arg2, arg3] = process.argv.slice(2);
 
 const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
 const page = targets.find(t => t.type === "page" && t.url.startsWith("https://discord.com"));
@@ -55,7 +57,55 @@ if (command === "eval") {
     })()`);
     if (!clicked) throw new Error(`no visible button "${arg}"`);
     console.log(`clicked "${arg}"`);
+} else if (command === "record") {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("fs");
+    const { execFileSync } = await import("child_process");
+    const { tmpdir } = await import("os");
+    const { join } = await import("path");
+
+    const frameDir = mkdtempSync(join(tmpdir(), "cdp-record-"));
+    const frames = [];
+    const onFrame = ({ data: raw }) => {
+        const msg = JSON.parse(raw);
+        if (msg.method !== "Page.screencastFrame") return;
+        const { data, sessionId, metadata } = msg.params;
+        const file = join(frameDir, `${String(frames.length).padStart(5, "0")}.png`);
+        writeFileSync(file, Buffer.from(data, "base64"));
+        frames.push({ file, time: metadata.timestamp });
+        ws.send(JSON.stringify({ id: ++nextId, method: "Page.screencastFrameAck", params: { sessionId } }));
+    };
+    ws.addEventListener("message", onFrame);
+    await send("Page.startScreencast", { format: "png", everyNthFrame: 1 });
+    await new Promise(resolve => setTimeout(resolve, Number(arg2 ?? 10) * 1000));
+    await send("Page.stopScreencast");
+    ws.removeEventListener("message", onFrame);
+    const crop = arg3 ? await evaluate(arg3) : null;
+    if (!frames.length) throw new Error("no frames: the page did not repaint while recording");
+
+    // frames arrive only when the page repaints, so each one is held until the next
+    const list = frames
+        .map((f, i) => `file '${f.file}'\nduration ${Math.max((frames[i + 1]?.time ?? f.time + 1) - f.time, 0.04)}`)
+        .join("\n");
+    writeFileSync(join(frameDir, "list.txt"), `${list}\nfile '${frames.at(-1).file}'\n`);
+    execFileSync("ffmpeg", [
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        join(frameDir, "list.txt"),
+        "-vf",
+        `${crop ? `crop=${Math.round(crop.width)}:${Math.round(crop.height)}:${Math.round(crop.x)}:${Math.round(crop.y)},` : ""}fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`,
+        "-c:v",
+        "libx264",
+        arg
+    ]);
+    rmSync(frameDir, { recursive: true });
+    console.log(`${arg} (${frames.length} frames)`);
 } else {
-    throw new Error("usage: cdp.mjs eval <js> | screenshot <file> | click <text>");
+    throw new Error("usage: cdp.mjs eval <js> | screenshot <file> | click <text> | record <file.mp4> <seconds>");
 }
 ws.close();

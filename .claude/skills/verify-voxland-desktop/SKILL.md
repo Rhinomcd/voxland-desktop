@@ -19,7 +19,7 @@ The app is an Electron shell around discord.com. Screen share on Wayland goes th
 .claude/skills/verify-voxland-desktop/launch.sh   # builds dev, prints "ready: pid …, cdp 9447, log …"
 ```
 
-On Hyprland it moves the dev window to the `special:voxverify` workspace. Extra arguments go to Electron. `VOXLAND_REPO=<worktree>` builds and runs another checkout; `VOXLAND_VERIFY_DIR` gives it its own profile dir.
+On Hyprland it creates a headless output, `voxverify`, at 20000,20000 and moves the dev window onto it, so the window renders and animates without appearing on a physical screen; `stop.sh` removes the output. Extra arguments go to Electron. `VOXLAND_REPO=<worktree>` builds and runs another checkout; `VOXLAND_VERIFY_DIR` gives it its own profile dir.
 
 On first launch it copies `~/.config/vesktop` into `$VOXLAND_VERIFY_DIR/config` and points `XDG_CONFIG_HOME` at the copy, so the dev build starts logged in and runs beside an installed Vesktop. `VOXLAND_CDP_PORT` overrides port 9447.
 
@@ -39,16 +39,25 @@ C=.claude/skills/verify-voxland-desktop/cdp.mjs
 node $C eval '<js expression, awaited>'
 node $C click 'Go Live'                     # last visible button with that exact text
 node $C screenshot ~/.cache/voxland-verify/evidence/x.png
+node $C record out.mp4 10 '<js returning {x,y,width,height}>'   # run in the background, drive from another shell
 ```
+
+`picker-shots.mjs <outDir> ['<window title>']` renders the screen-share picker in five states (window, quiet window, screen, unknown, override open) from fixtures and saves each one cropped to the modal.
 
 `navigator.mediaDevices.getDisplayMedia()` called from `eval` takes the same path as Go Live: portal pick, Voxland's picker modal, venmic, and an audio track. Nothing reaches a Discord call. Feature recipes live in `features/`.
 
 ## Evidence
 
-Write to `~/.cache/voxland-verify/evidence/`, which survives cleanup. Capture the modal before the action and the system state after it: PipeWire links (`pw-dump`, `pw-link -l`) and returned track labels. A screenshot alone does not prove audio routing.
+Write to `~/.cache/voxland-verify/evidence/`, which survives cleanup. Capture the state before the action and the result after it. For audio routing, the result is the PipeWire links (`pw-dump`, `pw-link -l`) and the returned track labels; a screenshot alone does not prove routing. Open each PNG before claiming a visual result.
+
+A PR that changes what the app shows embeds before and after screenshots of the same states: before from `main`, after from the PR head. Build each with `VOXLAND_REPO=<checkout> launch.sh` and shoot both with the same script, for example `picker-shots.mjs`, so the pairs differ only by the change. A new state shows after only. A change to an interaction (opening, choosing, expanding) also links a short screen recording from `cdp.mjs record`.
+
+Crop every screenshot and recording to the surface under change. The Discord window around it shows other people's names and messages, so it never goes into a PR.
+
+Host the files on the `pr-assets` branch under `pr-<number>/`, named `<state>-<before|after>.png` and `<interaction>.mp4`. Embed images with `https://github.com/Rhinomcd/voxland-desktop/blob/pr-assets/pr-<number>/<file>?raw=true` and link recordings with the same URL. The PR's evidence is done once every image renders in its description.
 
 ## Cleanup
 
 ```bash
-.claude/skills/verify-voxland-desktop/stop.sh --purge   # kills the process group launch.sh started; --purge deletes the copied profile (it holds a Discord token)
+.claude/skills/verify-voxland-desktop/stop.sh --purge   # kills the process group launch.sh started and removes the headless output; --purge deletes the copied profile (it holds a Discord token)
 ```

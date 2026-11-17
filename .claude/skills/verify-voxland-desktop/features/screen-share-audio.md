@@ -26,6 +26,17 @@ node $C eval 'document.querySelector("[role=dialog]").innerText'   # Audio row: 
 
 Targets: `{ kind: "window", ... }`, `{ kind: "screen" }`, or `null` (unknown, shows "Choose audio").
 
+All five states at once, cropped to the modal: `node .claude/skills/verify-voxland-desktop/picker-shots.mjs <outDir> '<title of a window that plays audio>'`.
+
+Record the override opening, cropped to the modal:
+
+```bash
+MODAL='(() => { const t = [...document.querySelectorAll("[role=dialog] h1")].find(h => h.textContent.trim() === "Screen Share Picker"); const r = t.closest("[class*=\"container_\"][class*=\"size-\"]").getBoundingClientRect(); return { x: r.x - 8, y: r.y - 8, width: r.width + 16, height: r.height + 16 }; })()'
+node $C record override.mp4 10 "$MODAL" &
+node $C eval 'void Vesktop.Components.ScreenShare.openScreenSharePicker([{ id: "window:1:0", name: "Game", url: "" }], true, { kind: "screen" }); 0'
+sleep 2; node $C click Change; wait
+```
+
 Drive routing directly with a real window from `hyprctl clients -j`:
 
 ```bash

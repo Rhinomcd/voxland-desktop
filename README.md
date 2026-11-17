@@ -51,7 +51,7 @@ screencopy {
 }
 ```
 
-Matching apps that put no process id on their audio streams, such as Java games like RuneLite, needs `pw-dump` (in `pipewire` on Arch, `pipewire-utils` on Fedora, `pipewire-bin` on Debian).
+Voxland uses `pw-dump` (in `pipewire` on Arch, `pipewire-utils` on Fedora, `pipewire-bin` on Debian) to match apps that put no process id on their audio streams, such as Java games like RuneLite, and to keep a live share following the app after Go Live. Without it, audio is matched once at Go Live and never updated.
 
 Without the hook, Voxland cannot tell what you shared, so the stream starts without audio and the picker asks you to choose it.
 

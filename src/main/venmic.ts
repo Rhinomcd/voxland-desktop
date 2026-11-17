@@ -12,7 +12,7 @@ import type { LinkData, Node, PatchBay as PatchBayType } from "@vencord/venmic";
 import { app, type WebContents } from "electron";
 import { IpcEvents } from "shared/IpcEvents";
 import { STATIC_DIR } from "shared/paths";
-import type { AudioApp, AudioAppList, AudioRequest } from "shared/screenShareAudio";
+import type { AudioApp, AudioAppList, AudioRequest, SharedWindow } from "shared/screenShareAudio";
 
 import {
     getHyprlandWindows,
@@ -274,22 +274,27 @@ function rememberApps(apps: AudioApp[], processes: Map<number, ProcessInfo>) {
     for (const app of apps) {
         knownApps.set(app.id, { app, starts: new Map(app.pids.map(pid => [pid, processes.get(pid)?.start])) });
     }
+    const listed = new Set(apps.map(a => a.id));
     for (const [id, { starts }] of knownApps) {
-        if (![...starts].some(([pid, start]) => isSameProcess(pid, start, processes)) && starts.size) {
-            knownApps.delete(id);
-        }
+        const alive = starts.size
+            ? [...starts].some(([pid, start]) => isSameProcess(pid, start, processes))
+            : listed.has(id);
+        if (!alive) knownApps.delete(id);
     }
 }
 
-/** Matchers for an app that went quiet: its live pids, plus client ids only where over-matching is harmless. */
-function rememberedMatchers(id: string, processes: Map<number, ProcessInfo>, keepClientIds: boolean) {
+/**
+ * Matchers for an app that went quiet: its live pids, plus looser client-id and name matchers only where
+ * over-matching is harmless (excludes).
+ */
+function rememberedMatchers(id: string, processes: Map<number, ProcessInfo>, keepLooseMatchers: boolean) {
     const known = knownApps.get(id);
     if (!known) return [];
 
     return known.app.match.filter(m => {
-        if (m["client.id"]) return keepClientIds;
         const pid = Number(m["application.process.id"]);
-        return !pid || isSameProcess(pid, known.starts.get(pid), processes);
+        if (!pid) return keepLooseMatchers;
+        return isSameProcess(pid, known.starts.get(pid), processes);
     });
 }
 
@@ -319,15 +324,22 @@ function sortedMatches(matches: Node[]) {
  * Null keeps the current link: a failed lookup must not reroute or silence a live stream. The first link
  * always goes through, because the renderer only looks for the virtual mic once, right after Go Live.
  */
+function isWindowOpen({ pid, address }: SharedWindow, windows: HyprlandWindow[]) {
+    return windows.some(w => w.address === address && w.pid === pid);
+}
+
 function resolveLinkData(request: AudioRequest, snapshot: Snapshot): LinkData | null {
     const current = new Map(snapshot.apps.map(a => [a.id, a]));
-    const matchersOf = (ids: string[], keepClientIds: boolean) =>
-        ids.flatMap(id => current.get(id)?.match ?? rememberedMatchers(id, snapshot.processes, keepClientIds));
+    const matchersOf = (ids: string[], keepLooseMatchers: boolean) =>
+        ids.flatMap(id => current.get(id)?.match ?? rememberedMatchers(id, snapshot.processes, keepLooseMatchers));
     const including = (matches: Node[]) =>
         buildLinkData({ include: matches.length ? sortedMatches(matches) : MATCH_NOTHING });
     const lookupFailed = !snapshot.hasClients || !snapshot.windows;
 
     if (request.kind === "none") return including([]);
+    if (request.kind === "window" && snapshot.windows && !isWindowOpen(request.window, snapshot.windows)) {
+        return including([]);
+    }
     if (activeData && lookupFailed) return null;
 
     switch (request.kind) {
@@ -341,9 +353,7 @@ function resolveLinkData(request: AudioRequest, snapshot: Snapshot): LinkData | 
         case "window": {
             if (!snapshot.windows) return including([]);
 
-            const { pid, address } = request.window;
-            if (!snapshot.windows.some(w => w.address === address && w.pid === pid)) return including([]);
-
+            const { pid } = request.window;
             const pids = withDescendants(pid, snapshot.processes);
             const windowApps = snapshot.apps.filter(a => a.pids.some(p => pids.includes(p)));
             return including([

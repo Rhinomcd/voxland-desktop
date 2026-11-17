@@ -109,7 +109,6 @@ function buildLinkData({ include, exclude }: { include?: Node[]; exclude?: Node[
 
 interface PipeWireClient {
     pid?: number;
-    name?: string;
     binary?: string;
 }
 
@@ -124,7 +123,6 @@ async function getPipeWireClients() {
             const props = info?.props ?? {};
             clients.set(String(id), {
                 pid: Number(props["application.process.id"]) || undefined,
-                name: props["application.name"]?.toString(),
                 binary: props["application.process.binary"]?.toString()
             });
         }
@@ -134,6 +132,8 @@ async function getPipeWireClients() {
 
     return clients;
 }
+
+const DAEMON_BINARIES = new Set(["pipewire", "wireplumber"]);
 
 function isListedNode(node: Node, deviceSelect: boolean) {
     if (node["node.name"]?.startsWith("venmic-loopback")) return false;
@@ -166,10 +166,10 @@ async function listAudioApps(nodes: Node[]): Promise<AudioApp[]> {
     for (const node of nodes) {
         if (!isListedNode(node, deviceSelect)) continue;
 
-        // ALSA-plugin apps (e.g. Java) put no pid on their nodes, but the client that created them has one.
-        // Daemon modules (filter chains, loopbacks) share the daemon's client, so require matching names.
+        // ALSA-plugin and native apps may put no pid on their nodes, but the client that created them has one.
+        // Nodes made by daemon modules (filter chains, loopbacks) belong to the daemon's own client instead.
         const client = clients.get(node["client.id"]);
-        const fromClient = client?.name !== undefined && client.name === node["application.name"] ? client : undefined;
+        const fromClient = client && !DAEMON_BINARIES.has(client.binary ?? "") ? client : undefined;
         const pid = Number(node["application.process.id"]) || fromClient?.pid;
         if (pid && ownPids.has(pid)) continue;
 

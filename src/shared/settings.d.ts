@@ -45,7 +45,6 @@ export interface Settings {
         workaround?: boolean;
 
         deviceSelect?: boolean;
-        granularSelect?: boolean;
 
         ignoreVirtual?: boolean;
         ignoreDevices?: boolean;

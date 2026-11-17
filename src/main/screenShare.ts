@@ -10,6 +10,7 @@ import { desktopCapturer, session, Streams } from "electron";
 import type { StreamPick } from "renderer/components/ScreenSharePicker";
 import { IpcCommands, IpcEvents } from "shared/IpcEvents";
 
+import { readCaptureTarget } from "./captureTarget";
 import { sendRendererCommand } from "./ipcCommands";
 import { handle } from "./utils/ipcWrappers";
 import { isDiscordUrl } from "./utils/isDiscordUrl";
@@ -41,6 +42,7 @@ export function registerScreenShareHandler() {
         // the handler applies to the whole session, so other sites (e.g. opened via openLinksWithElectron) would get our picker
         if (!isDiscordUrl(request.frame?.top?.url)) return callback(null);
 
+        const requestedAt = Date.now();
         // request full resolution on wayland right away because we always only end up with one result anyway
         const width = isWayland ? 1920 : 176;
         const sources = await desktopCapturer
@@ -64,9 +66,11 @@ export function registerScreenShareHandler() {
         if (isWayland) {
             const video = data[0];
             if (video) {
+                const target = await readCaptureTarget(requestedAt);
                 const stream = await sendRendererCommand<StreamPick>(IpcCommands.SCREEN_SHARE_PICKER, {
-                    screens: [video],
-                    skipPicker: true
+                    screens: [{ ...video, name: target?.kind === "window" ? target.label : video.name }],
+                    skipPicker: true,
+                    target
                 }).catch(e => {
                     console.error("Error during screenshare picker", e);
                     return null;

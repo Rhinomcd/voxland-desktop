@@ -6,18 +6,8 @@
 
 import "./screenSharePicker.css";
 import { classNameFactory } from "@vencord/types/api/Styles";
-import {
-    Button,
-    Card,
-    CogWheel,
-    FormSwitch,
-    Heading,
-    Margins,
-    Paragraph,
-    RestartIcon,
-    Span
-} from "@vencord/types/components";
-import { Logger, useAwaiter, useForceUpdater } from "@vencord/types/utils";
+import { Button, Card, CogWheel, FormSwitch, Heading, Margins, Paragraph, Span } from "@vencord/types/components";
+import { classes, Logger, useAwaiter } from "@vencord/types/utils";
 import { onceReady } from "@vencord/types/webpack";
 import {
     closeModal,
@@ -26,12 +16,13 @@ import {
     openModal,
     Select,
     UserStore,
+    useEffect,
     useState
 } from "@vencord/types/webpack/common";
-import { Node } from "@vencord/venmic";
 import type { Dispatch, SetStateAction } from "react";
 import { State, useSettings, useVesktopState } from "renderer/settings";
 import { isLinux, isWindows } from "renderer/utils";
+import type { AudioApp, AudioAppList, AudioRequest, CaptureTarget } from "shared/screenShareAudio";
 
 import { SimpleErrorBoundary } from "./SimpleErrorBoundary";
 
@@ -44,21 +35,16 @@ const cl = classNameFactory("vcd-screen-picker-");
 export type StreamResolution = (typeof StreamResolutions)[number];
 export type StreamFps = (typeof StreamFps)[number];
 
-type SpecialSource = "None" | "Entire System";
-
-type AudioSource = SpecialSource | Node;
-type AudioSources = SpecialSource | Node[];
-
-interface AudioItem {
-    name: string;
-    value: AudioSource;
-}
+type AudioChoice =
+    | { kind: "window" }
+    | { kind: "none" }
+    | { kind: "system"; exclude: AudioApp[] }
+    | { kind: "apps"; apps: AudioApp[] };
 
 interface StreamSettings {
     audio: boolean;
     contentHint?: string;
-    includeSources?: AudioSources;
-    excludeSources?: AudioSources;
+    audioRequest?: AudioRequest;
 }
 
 export interface StreamPick extends StreamSettings {
@@ -97,31 +83,24 @@ if (isLinux) {
     });
 }
 
-export function openScreenSharePicker(screens: Source[], skipPicker: boolean) {
+export function openScreenSharePicker(screens: Source[], skipPicker: boolean, target: CaptureTarget | null = null) {
     let didSubmit = false;
     return new Promise<StreamPick>((resolve, reject) => {
         const key = openModal(
             props => (
                 <ModalComponent
                     screens={screens}
+                    target={target}
                     modalProps={props}
                     submit={async v => {
                         didSubmit = true;
 
-                        if (isLinux) {
+                        if (isLinux && v.audioRequest) {
                             try {
-                                if (v.includeSources && v.includeSources !== "None") {
-                                    if (v.includeSources === "Entire System") {
-                                        await VesktopNative.virtmic.startSystem(
-                                            !v.excludeSources || isSpecialSource(v.excludeSources)
-                                                ? []
-                                                : v.excludeSources
-                                        );
-                                    } else {
-                                        await VesktopNative.virtmic.start(v.includeSources);
-                                    }
-                                } else {
+                                if (v.audioRequest.kind === "none") {
                                     await VesktopNative.virtmic.stop();
+                                } else {
+                                    await VesktopNative.virtmic.start(v.audioRequest);
                                 }
                             } catch (e) {
                                 // still start the stream, just without audio
@@ -172,15 +151,7 @@ function ScreenPicker({ screens, chooseScreen }: { screens: Source[]; chooseScre
     );
 }
 
-function AudioSettingsModal({
-    modalProps,
-    close,
-    setAudioSources
-}: {
-    modalProps: any;
-    close: () => void;
-    setAudioSources: (s: AudioSources) => void;
-}) {
+function AudioSettingsModal({ modalProps, close }: { modalProps: any; close: () => void }) {
     const Settings = useSettings();
 
     return (
@@ -256,16 +227,6 @@ function AudioSettingsModal({
                     value={Settings.audio?.ignoreDevices ?? true}
                 />
                 <FormSwitch
-                    title="Granular Selection"
-                    description="Allow to select applications more granularly."
-                    hideBorder
-                    onChange={value => {
-                        Settings.audio = { ...Settings.audio, granularSelect: value };
-                        setAudioSources("None");
-                    }}
-                    value={Settings.audio?.granularSelect ?? false}
-                />
-                <FormSwitch
                     title="Device Selection"
                     description={
                         <>
@@ -274,10 +235,7 @@ function AudioSettingsModal({
                         </>
                     }
                     hideBorder
-                    onChange={value => {
-                        Settings.audio = { ...Settings.audio, deviceSelect: value };
-                        setAudioSources("None");
-                    }}
+                    onChange={value => (Settings.audio = { ...Settings.audio, deviceSelect: value })}
                     value={Settings.audio?.deviceSelect ?? false}
                     disabled={Settings.audio?.ignoreDevices}
                 />
@@ -318,14 +276,15 @@ function StreamSettingsUi({
     source,
     settings,
     setSettings,
-    skipPicker
+    skipPicker,
+    audio
 }: {
     source: Source;
     settings: StreamSettings;
     setSettings: Dispatch<SetStateAction<StreamSettings>>;
     skipPicker: boolean;
+    audio: AudioPickerProps;
 }) {
-    const Settings = useSettings();
     const qualitySettings = State.store.screenshareQuality!;
 
     const [thumb] = useAwaiter(
@@ -336,18 +295,6 @@ function StreamSettingsUi({
         }
     );
 
-    const openSettings = () => {
-        openModal(props => (
-            <AudioSettingsModal
-                modalProps={props}
-                close={() => props.onClose()}
-                setAudioSources={sources =>
-                    setSettings(s => ({ ...s, includeSources: sources, excludeSources: sources }))
-                }
-            />
-        ));
-    };
-
     return (
         <div>
             <Heading tag="h4" className={Margins.bottom8}>
@@ -355,7 +302,7 @@ function StreamSettingsUi({
             </Heading>
             <Card className={cl("card", "preview")}>
                 <img src={thumb} alt="" className={cl(isLinux ? "preview-img-linux" : "preview-img")} />
-                <Paragraph>{source.name}</Paragraph>
+                <Paragraph>{source.name || "Your screen"}</Paragraph>
             </Card>
 
             <Heading tag="h4" className={Margins.bottom8}>
@@ -419,146 +366,145 @@ function StreamSettingsUi({
                         )}
                     </section>
                 </div>
-
-                {isLinux && (
-                    <AudioSourcePickerLinux
-                        openSettings={openSettings}
-                        includeSources={settings.includeSources}
-                        excludeSources={settings.excludeSources}
-                        deviceSelect={Settings.audio?.deviceSelect}
-                        granularSelect={Settings.audio?.granularSelect}
-                        setIncludeSources={sources => setSettings(s => ({ ...s, includeSources: sources }))}
-                        setExcludeSources={sources => setSettings(s => ({ ...s, excludeSources: sources }))}
-                    />
-                )}
             </Card>
+
+            {isLinux && <AudioPickerLinux {...audio} />}
         </div>
     );
 }
 
-function isSpecialSource(value?: AudioSource | AudioSources): value is SpecialSource {
-    return typeof value === "string";
+function useAudioApps(enabled: boolean) {
+    const [list, setList] = useState<AudioAppList | null>(null);
+
+    useEffect(() => {
+        if (!enabled) return;
+
+        let cancelled = false;
+        let timer: ReturnType<typeof setTimeout>;
+        const refresh = async () => {
+            try {
+                const l = await VesktopNative.virtmic.list();
+                if (!cancelled) setList(l);
+            } catch (e) {
+                new Logger("VesktopScreenShare").error("Failed to list audio sources", e);
+            }
+            if (!cancelled) timer = setTimeout(refresh, 2000);
+        };
+
+        refresh();
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [enabled]);
+
+    return list;
 }
 
-function mapToAudioItem(node: AudioSource, granularSelect?: boolean, deviceSelect?: boolean): AudioItem[] {
-    if (isSpecialSource(node)) {
-        return [{ name: node, value: node }];
-    }
-
-    const mediaClass = node["media.class"];
-
-    if (mediaClass?.includes("Video") || mediaClass?.includes("Midi")) {
-        return [];
-    }
-
-    if (!deviceSelect && node["device.id"]) {
-        return [];
-    }
-
-    const preferred = ["application.name", "node.description", "node.name", "application.process.binary"] as const;
-    const prop = preferred.find(prop => node[prop]);
-
-    if (!prop) {
-        return [];
-    }
-
-    const name = node[prop]!;
-    const items: AudioItem[] = [{ name: name, value: { [prop]: name } }];
-
-    if (!granularSelect) {
-        return items;
-    }
-
-    let granularName = name;
-    const granularProps: Node = { [prop]: name };
-
-    const append = (name: string, brackets: string) => {
-        const value = node[name];
-
-        if (!value) {
-            return;
-        }
-
-        granularName += ` ${brackets[0]}${value}${brackets[1]}`;
-        granularProps[name] = value;
-    };
-
-    append("application.process.id", "<>");
-    append("application.process.binary", "()");
-    append("media.name", "[]");
-
-    items.push({ name: granularName, value: granularProps });
-
-    return items;
+function appsOfWindow(target: CaptureTarget | null, apps: AudioApp[]) {
+    if (target?.kind !== "window") return [];
+    return apps.filter(a => a.pids.some(pid => target.pids.includes(pid)));
 }
 
-function hasMatchingProps(value: Node, other: Node) {
-    const keys = Object.keys(value);
-    return keys.length === Object.keys(other).length && keys.every(key => value[key] === other[key]);
+function defaultAudioChoice(target: CaptureTarget | null): AudioChoice {
+    if (target?.kind === "window" && target.pids.length) return { kind: "window" };
+    if (target?.kind === "screen") return { kind: "system", exclude: [] };
+    return { kind: "none" };
 }
 
-function isItemSelected(sources?: AudioSources) {
-    return (value: AudioSource) => {
-        if (!sources) {
-            return false;
-        }
-
-        if (isSpecialSource(sources) || isSpecialSource(value)) {
-            return sources === value;
-        }
-
-        return sources.some(source => hasMatchingProps(source, value));
-    };
+function toAudioRequest(choice: AudioChoice, target: CaptureTarget | null): AudioRequest {
+    switch (choice.kind) {
+        case "none":
+            return choice;
+        case "system":
+            return { kind: "system", exclude: choice.exclude.map(a => a.id) };
+        case "apps":
+            return { kind: "apps", apps: choice.apps.map(a => a.id) };
+        case "window":
+            return target?.kind === "window" ? { kind: "window", window: target.window } : { kind: "none" };
+    }
 }
 
-function updateItems(setSources: (s: AudioSources) => void, sources?: AudioSources) {
-    return (value: AudioSource) => {
-        if (isSpecialSource(value)) {
-            setSources(value);
-            return;
-        }
+function describeAudioChoice(choice: AudioChoice, target: CaptureTarget | null, apps: AudioApp[]) {
+    const labels = (picked: AudioApp[]) => picked.map(p => (apps.find(a => a.id === p.id) ?? p).label).join(", ");
 
-        if (isSpecialSource(sources)) {
-            setSources([value]);
-            return;
+    switch (choice.kind) {
+        case "none":
+            return target
+                ? { title: "No audio", detail: "Your stream will be silent" }
+                : {
+                      title: "No audio",
+                      detail: "Couldn't tell what you're sharing"
+                  };
+        case "system":
+            return {
+                title: "All system audio",
+                detail: choice.exclude.length
+                    ? `Everything except Discord and ${labels(choice.exclude)}`
+                    : "Everything except Discord"
+            };
+        case "apps":
+            return { title: labels(choice.apps), detail: "Chosen by you" };
+        case "window": {
+            const windowApps = appsOfWindow(target, apps);
+            const windowLabel = target?.kind === "window" ? target.label : "";
+            return windowApps.length
+                ? { title: labels(windowApps), detail: "From the window you're sharing" }
+                : { title: windowLabel, detail: "From the window you're sharing, once it plays sound" };
         }
-
-        if (isItemSelected(sources)(value)) {
-            setSources(sources?.filter(x => !hasMatchingProps(x, value)) ?? "None");
-            return;
-        }
-
-        setSources([...(sources || []), value]);
-    };
+    }
 }
 
-function AudioSourcePickerLinux({
-    includeSources,
-    excludeSources,
-    deviceSelect,
-    granularSelect,
-    openSettings,
-    setIncludeSources,
-    setExcludeSources
-}: {
-    includeSources?: AudioSources;
-    excludeSources?: AudioSources;
-    deviceSelect?: boolean;
-    granularSelect?: boolean;
-    openSettings: () => void;
-    setIncludeSources: (s: AudioSources) => void;
-    setExcludeSources: (s: AudioSources) => void;
-}) {
-    const [audioSourcesSignal, refreshAudioSources] = useForceUpdater(true);
-    const [sources, _, loading] = useAwaiter(() => VesktopNative.virtmic.list(), {
-        fallbackValue: { ok: true, targets: [], hasPipewirePulse: true },
-        deps: [audioSourcesSignal]
-    });
+type AudioOption = "window" | "system" | "none" | AudioApp;
 
-    const hasPipewirePulse = sources.ok ? sources.hasPipewirePulse : true;
+function toggleApp(picked: AudioApp[], app: AudioApp) {
+    return picked.some(p => p.id === app.id) ? picked.filter(p => p.id !== app.id) : [...picked, app];
+}
+
+/** Keeps picked apps listed after they go quiet, so they can still be unpicked. */
+function withPicked(apps: AudioApp[], picked: AudioApp[]) {
+    return [...apps, ...picked.filter(p => !apps.some(a => a.id === p.id))];
+}
+
+interface AudioPickerProps {
+    list: AudioAppList | null;
+    target: CaptureTarget | null;
+    choice: AudioChoice;
+    setChoice: (choice: AudioChoice) => void;
+}
+
+function SpeakerIcon({ muted }: { muted: boolean }) {
+    return (
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <path
+                d={
+                    muted
+                        ? "M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a9 9 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z"
+                        : "M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06A9 9 0 0 0 14 3.23z"
+                }
+            />
+        </svg>
+    );
+}
+
+function AudioPickerLinux({ list, target, choice, setChoice }: AudioPickerProps) {
+    return (
+        <>
+            <Heading tag="h4" className={classes(Margins.top16, Margins.bottom8)}>
+                Audio
+            </Heading>
+            <Card className={cl("card", "audio-card")}>
+                <AudioPickerLinuxBody list={list} target={target} choice={choice} setChoice={setChoice} />
+            </Card>
+        </>
+    );
+}
+
+function AudioPickerLinuxBody({ list, target, choice, setChoice }: AudioPickerProps) {
+    const [editing, setEditing] = useState(false);
     const [ignorePulseWarning, setIgnorePulseWarning] = useState(false);
 
-    if (!sources.ok && sources.isGlibCxxOutdated) {
+    if (list && !list.ok && list.isGlibCxxOutdated) {
         return (
             <Paragraph>
                 Failed to retrieve Audio Sources because your C++ library is too old to run
@@ -578,7 +524,7 @@ function AudioSourcePickerLinux({
         );
     }
 
-    if (!hasPipewirePulse && !ignorePulseWarning) {
+    if (list?.ok && !list.hasPipewirePulse && !ignorePulseWarning) {
         return (
             <Paragraph>
                 Could not find pipewire-pulse. See{" "}
@@ -597,88 +543,127 @@ function AudioSourcePickerLinux({
         );
     }
 
-    const specialSources: SpecialSource[] = ["None", "Entire System"] as const;
+    const apps = list?.ok ? list.apps : [];
+    const { title, detail } = describeAudioChoice(choice, target, apps);
+    const needsChoice = choice.kind === "none" && !target;
 
-    const uniqueName = (value: AudioItem, index: number, list: AudioItem[]) =>
-        list.findIndex(x => x.name === value.name) === index;
+    const sourceOptions: { label: string; value: AudioOption }[] = [
+        ...(target?.kind === "window" && target.pids.length
+            ? [{ label: `Window you're sharing (${target.label})`, value: "window" as const }]
+            : []),
+        { label: "All system audio", value: "system" },
+        { label: "No audio", value: "none" },
+        ...withPicked(apps, choice.kind === "apps" ? choice.apps : []).map(a => ({ label: a.label, value: a }))
+    ];
 
-    const allSources = sources.ok
-        ? [...specialSources, ...sources.targets]
-              .map(target => mapToAudioItem(target, granularSelect, deviceSelect))
-              .flat()
-              .filter(uniqueName)
-        : [];
+    const isSourceSelected = (value: AudioOption) => {
+        if (typeof value === "string") return choice.kind === value;
+        return choice.kind === "apps" && choice.apps.some(a => a.id === value.id);
+    };
+
+    const selectSource = (value: AudioOption) => {
+        if (typeof value === "string") {
+            setChoice(value === "system" ? { kind: "system", exclude: [] } : { kind: value });
+            return;
+        }
+
+        const picked = toggleApp(choice.kind === "apps" ? choice.apps : [], value);
+        setChoice(picked.length ? { kind: "apps", apps: picked } : { kind: "none" });
+    };
+
+    const openSettings = () =>
+        openModal(props => <AudioSettingsModal modalProps={props} close={() => props.onClose()} />);
 
     return (
         <>
-            <div className={cl("audio-sources")}>
-                <section>
-                    <Heading tag="h5" className={Margins.bottom8}>
-                        {loading ? "Loading Sources..." : "Audio Sources"}
-                    </Heading>
-                    <SimpleErrorBoundary>
-                        <Select
-                            options={allSources.map(({ name, value }) => ({
-                                label: name,
-                                value: value,
-                                default: name === "None"
-                            }))}
-                            isSelected={isItemSelected(includeSources)}
-                            select={updateItems(setIncludeSources, includeSources)}
-                            serialize={JSON.stringify}
-                            popoutPosition="top"
-                            closeOnSelect={false}
-                            renderOptionLabel={o => o.label}
-                        />
-                    </SimpleErrorBoundary>
-                </section>
-                {includeSources === "Entire System" && (
-                    <section>
-                        <Heading tag="h5" className={Margins.bottom8}>
-                            Exclude Sources
-                        </Heading>
-                        <SimpleErrorBoundary>
-                            <Select
-                                options={allSources
-                                    .filter(x => x.name !== "Entire System")
-                                    .map(({ name, value }) => ({
-                                        label: name,
-                                        value: value,
-                                        default: name === "None"
-                                    }))}
-                                isSelected={isItemSelected(excludeSources)}
-                                select={updateItems(setExcludeSources, excludeSources)}
-                                serialize={JSON.stringify}
-                                popoutPosition="top"
-                                closeOnSelect={false}
-                                renderOptionLabel={o => o.label}
-                            />
-                        </SimpleErrorBoundary>
-                    </section>
-                )}
-            </div>
-            <div className={cl("settings-buttons")}>
-                <Button variant="secondary" onClick={refreshAudioSources} className={cl("settings-button")}>
-                    <RestartIcon className={cl("settings-button-icon")} />
-                    Refresh Audio Sources
-                </Button>
-                <Button variant="secondary" onClick={openSettings} className={cl("settings-button")}>
-                    <CogWheel className={cl("settings-button-icon")} />
-                    Open Audio Settings
+            <div className={cl("audio-row")}>
+                <div className={cl("audio-icon")} data-muted={choice.kind === "none"}>
+                    <SpeakerIcon muted={choice.kind === "none"} />
+                </div>
+                <div className={cl("audio-text")}>
+                    <Paragraph weight="semibold">{title}</Paragraph>
+                    <Paragraph size="sm" className={cl("audio-detail")}>
+                        {detail}
+                    </Paragraph>
+                </div>
+                <Button
+                    variant={needsChoice && !editing ? "primary" : "secondary"}
+                    size="small"
+                    onClick={() => setEditing(e => !e)}
+                >
+                    {editing ? "Done" : needsChoice ? "Choose audio" : "Change"}
                 </Button>
             </div>
+
+            {editing && (
+                <div className={cl("audio-panel")}>
+                    <div className={cl("audio-sources")}>
+                        <section>
+                            <Heading tag="h5" className={Margins.bottom8}>
+                                Share audio from
+                            </Heading>
+                            <SimpleErrorBoundary>
+                                <Select
+                                    options={sourceOptions}
+                                    isSelected={isSourceSelected}
+                                    select={selectSource}
+                                    serialize={(v: AudioOption) => (typeof v === "string" ? v : v.id)}
+                                    popoutPosition="top"
+                                    closeOnSelect={false}
+                                    renderOptionLabel={o => o.label}
+                                />
+                            </SimpleErrorBoundary>
+                        </section>
+                        {choice.kind === "system" && (
+                            <section>
+                                <Heading tag="h5" className={Margins.bottom8}>
+                                    Leave out
+                                </Heading>
+                                <SimpleErrorBoundary>
+                                    <Select
+                                        options={withPicked(apps, choice.exclude).map(a => ({
+                                            label: a.label,
+                                            value: a
+                                        }))}
+                                        isSelected={(a: AudioApp) => choice.exclude.some(e => e.id === a.id)}
+                                        select={(a: AudioApp) =>
+                                            setChoice({ kind: "system", exclude: toggleApp(choice.exclude, a) })
+                                        }
+                                        serialize={(a: AudioApp) => a.id}
+                                        popoutPosition="top"
+                                        closeOnSelect={false}
+                                        renderOptionLabel={o => o.label}
+                                        placeholder="Nothing else"
+                                    />
+                                </SimpleErrorBoundary>
+                            </section>
+                        )}
+                        <Button
+                            variant="secondary"
+                            size="small"
+                            onClick={openSettings}
+                            className={cl("settings-button", "audio-settings-button")}
+                        >
+                            <CogWheel className={cl("settings-button-icon")} />
+                            Audio Settings
+                        </Button>
+                    </div>
+                </div>
+            )}
         </>
     );
 }
 
 function ModalComponent({
     screens,
+    target,
     modalProps,
     submit,
     close,
     skipPicker
 }: {
     screens: Source[];
+    target: CaptureTarget | null;
     modalProps: any;
     submit: (data: StreamPick) => void;
     close: () => void;
@@ -687,20 +672,23 @@ function ModalComponent({
     const [selected, setSelected] = useState<string | undefined>(skipPicker ? screens[0].id : void 0);
     const [settings, setSettings] = useState<StreamSettings>({
         contentHint: "motion",
-        audio: true,
-        includeSources: "None"
+        audio: true
     });
+    const [pickedAudio, setAudioChoice] = useState<AudioChoice>();
+    // Voxland's own grid (X11) tells screens from windows; the portal (Wayland) needs the picker hook
+    const resolvedTarget =
+        target ?? (!skipPicker && selected?.startsWith("screen:") ? { kind: "screen" as const } : null);
+    const audioChoice = pickedAudio ?? defaultAudioChoice(resolvedTarget);
+    const audioList = useAudioApps(isLinux && !!selected);
     useVesktopState().screenshareQuality ??= {
         resolution: "720",
         frameRate: "30"
     };
 
     function handleGoLive() {
-        currentSettings = settings;
-        submit({
-            id: selected!,
-            ...settings
-        });
+        const pick = { ...settings, audioRequest: isLinux ? toAudioRequest(audioChoice, resolvedTarget) : undefined };
+        currentSettings = pick;
+        submit({ id: selected!, ...pick });
         close();
     }
 
@@ -714,7 +702,11 @@ function ModalComponent({
                 {
                     text: showGoBack ? "Back" : "Cancel",
                     variant: "secondary",
-                    onClick: () => (showGoBack ? setSelected(void 0) : close())
+                    onClick: () => {
+                        if (!showGoBack) return close();
+                        setSelected(void 0);
+                        setAudioChoice(undefined);
+                    }
                 },
                 {
                     text: "Go Live",
@@ -731,6 +723,7 @@ function ModalComponent({
                     settings={settings}
                     setSettings={setSettings}
                     skipPicker={skipPicker}
+                    audio={{ list: audioList, target: resolvedTarget, choice: audioChoice, setChoice: setAudioChoice }}
                 />
             )}
         </Modal>

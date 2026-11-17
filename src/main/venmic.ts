@@ -292,7 +292,8 @@ function rememberedMatchers(id: string, processes: Map<number, ProcessInfo>, kee
 
     return known.app.match.filter(m => {
         const pid = Number(m["application.process.id"]);
-        if (!pid) return keepLooseMatchers;
+        // an app grouped by name was picked by name, so its name matchers are its identity
+        if (!pid) return keepLooseMatchers || !known.starts.size;
         return isSameProcess(pid, known.starts.get(pid), processes);
     });
 }

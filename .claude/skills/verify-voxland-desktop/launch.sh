@@ -15,7 +15,6 @@ if ss -ltn | grep -q ":$port "; then
     exit 1
 fi
 
-# keep the dev window off Ryan's screen: move it to a special workspace nobody looks at
 hide_windows() {
     [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] || return 0
     local pids address

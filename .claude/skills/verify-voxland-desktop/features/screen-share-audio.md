@@ -15,20 +15,30 @@ Join a voice channel, click Share Screen, pick a window or screen in the portal 
 
 ## Driving it with cdp.mjs
 
+Render a picker state from a fixture (no portal request):
+
 ```bash
 C=.claude/skills/verify-voxland-desktop/cdp.mjs
-echo "RuneLite - RhinoMcD" >> ~/.local/state/obs-runescape/pick-queue   # any exact window title
-node $C eval 'void navigator.mediaDevices.getDisplayMedia({video:true,audio:true}).then(s => (window.__s = s, window.__r = s.getTracks().map(t => t.kind + ":" + t.label))); 0'
-sleep 6
-node $C eval 'document.querySelector(".vcd-screen-picker-audio-picker").innerText'   # "Audio … <app> … From the window you're sharing."
-node $C click 'Go Live'; sleep 3
-node $C eval 'window.__r'                                                             # includes "audio:vencord-screen-share"
+node $C eval 'void Vesktop.Components.ScreenShare.openScreenSharePicker([{ id: "window:1:0", name: "Game", url: "" }], true, { kind: "window", label: "Game", window: { pid: 1234, address: "0x1" }, pids: [1234] }); 0'
+sleep 3
+node $C eval 'document.querySelector("[role=dialog]").innerText'   # Audio row: the window's app and "From the window you're sharing"
 ```
 
-Prove the routing by listing the nodes linked into this instance's mic. venmic names loopbacks `venmic-loopback-capture-<src>-<mic>`. The `<mic>` that appears after Go Live, and was absent before it, belongs to this instance. Map each source node to a PID through its `client.id`, then check the PID with `hyprctl clients -j`. Stop with `node $C eval 'window.__s.getTracks().forEach(t => t.stop()); VesktopNative.virtmic.stop()'`.
+Targets: `{ kind: "window", ... }`, `{ kind: "screen" }`, or `null` (unknown, shows "Choose audio").
+
+Drive routing directly with a real window from `hyprctl clients -j`:
+
+```bash
+W=$(hyprctl clients -j | jq -c '.[] | select(.title=="<window title>") | {pid, address}')
+node $C eval "VesktopNative.virtmic.start({ kind: 'window', window: $W })"
+node $C eval "VesktopNative.virtmic.start({ kind: 'system', exclude: ['<app id from VesktopNative.virtmic.list()>'] })"
+node $C eval 'VesktopNative.virtmic.stop()'
+```
+
+Prove the routing by listing the nodes linked into this instance's mic. The app log prints the mic's receiver id (`create_mic ... receiver: <id>`), and venmic names its loopbacks `venmic-loopback-capture-<src>-<receiver>`. Map each linked source node to a PID through its `client.id` (`pw-dump`), then check that PID with `hyprctl clients -j`.
 
 ## Gotchas
 
-- Window matching needs `scripts/linux/voxland-record-share-pick` in the picker's stdout pipe; Ryan's `xdph-picker` has it. Without the hook, every share falls back to all system audio.
-- Java/ALSA apps (RuneLite) put no PID on their nodes; the PID comes from the PipeWire client.
-- Ryan's own Vesktop also runs venmic. Its mic suffix differs from the dev instance's, so do not mix them up.
+- Window matching in a real share needs `scripts/linux/voxland-record-share-pick` in the xdph picker's stdout pipe (see the README). Without it, window shares default to no audio.
+- Java/ALSA apps put no PID on their nodes; the PID comes from the PipeWire client that owns them.
+- Every running Vesktop instance has its own venmic mic, each with a different receiver id.

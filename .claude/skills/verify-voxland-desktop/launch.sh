@@ -14,17 +14,23 @@ if pid=$(running_pid); then
     echo "already running: pid $pid" >&2
     exit 1
 fi
-if ss -ltn | grep -q ":$port "; then
+if [[ -n $(ss -ltnH "sport = :$port") ]]; then
     echo "port $port is taken; set VOXLAND_CDP_PORT" >&2
     exit 1
 fi
+
+# Hyprland with a Lua config takes `eval`; older versions answer "unknown request" with exit 0 and need the legacy commands
+hypr_eval() {
+    local out
+    out=$(hyprctl eval "$1" 2>&1) && [[ $out != *"unknown request"* ]]
+}
 
 # Hyprland only renders windows on a monitor, so the dev window goes to a headless one far from the real screens
 move_to_headless_output() {
     [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] || return 0
     if ! hyprctl monitors -j | jq -e '.[] | select(.name == "voxverify")' >/dev/null; then
         hyprctl output create headless voxverify >/dev/null
-        hyprctl eval 'hl.monitor({ output = "voxverify", mode = "1280x1100@60", position = "20000x20000", scale = 1 })' >/dev/null 2>&1 ||
+        hypr_eval 'hl.monitor({ output = "voxverify", mode = "1280x1100@60", position = "20000x20000", scale = 1 })' ||
             hyprctl keyword monitor voxverify,1280x1100@60,20000x20000,1 >/dev/null
     fi
     local monitor workspace pids clients address
@@ -38,7 +44,7 @@ move_to_headless_output() {
             return 0
         fi
         for address in $(jq -r --argjson m "$monitor" '.[] | select(.monitor != $m) | .address' <<<"$clients"); do
-            hyprctl eval "hl.dispatch(hl.dsp.window.move({ workspace = '$workspace', follow = false, window = 'address:$address' }))" >/dev/null 2>&1 ||
+            hypr_eval "hl.dispatch(hl.dsp.window.move({ workspace = '$workspace', follow = false, window = 'address:$address' }))" ||
                 hyprctl dispatch movetoworkspacesilent "$workspace,address:$address" >/dev/null
         done
         sleep 0.2
@@ -56,11 +62,12 @@ if [[ ! -d $state/config/vesktop ]]; then
     mv "$state/config/vesktop.partial" "$state/config/vesktop"
 fi
 
+[[ -d $repo/node_modules ]] || (cd "$repo" && pnpm install --frozen-lockfile >/dev/null)
 (cd "$repo" && pnpm build:dev >/dev/null)
 cd "$repo"
 XDG_CONFIG_HOME=$state/config setsid env -u VENCORD_USER_DATA_DIR node_modules/.bin/electron --remote-debugging-port="$port" "$@" . >"$state/app.log" 2>&1 &
 echo $! >"$state/pid"
-trap '"$here/stop.sh"' EXIT
+trap 'echo "launch failed; stopping it. Log tail ($state/app.log):" >&2; tail -n 20 "$state/app.log" >&2; "$here/stop.sh"' EXIT
 
 pid=$(cat "$state/pid")
 # the main window is shown only once Discord has loaded and the splash page is gone
@@ -75,6 +82,5 @@ for _ in $(seq 60); do
     fi
     sleep 1
 done
-echo "discord page never loaded; stopping it. Log tail ($state/app.log):" >&2
-tail -n 20 "$state/app.log" >&2
+echo "discord page never loaded" >&2
 exit 1

@@ -40,9 +40,11 @@ node .claude/skills/verify-voxland-desktop/cdp.mjs eval 'typeof VesktopNative'  
 C=.claude/skills/verify-voxland-desktop/cdp.mjs
 node $C eval '<js expression, awaited>'
 node $C click 'Go Live'                     # last visible button with that exact text
-node $C screenshot "$VOXLAND_VERIFY_DIR/evidence/x.png" '<js returning a rect or DOMRect>'   # cropped to the rect
-node $C record out.mp4 10 '<js returning a rect or DOMRect>'   # run in the background, drive from another shell; keeps only frames where the rect is visible
+node $C screenshot "${VOXLAND_VERIFY_DIR:-$HOME/.cache/voxland-verify}/evidence/x.png" '<rect>'   # cropped to the rect
+node $C record out.mp4 10 '<rect>'   # run in the background, drive from another shell
 ```
+
+A `<rect>` is one JS expression that yields `{x,y,width,height}` in CSS px or a DOMRect, such as `document.querySelector("[role=dialog]")?.getBoundingClientRect()`. `record` samples it around every frame, drops frames painted while it was absent, and blacks out everything outside it, so a surface that moves or grows never reveals what lies around it. Step through a recording's frames before linking it, as with screenshots.
 
 `navigator.mediaDevices.getDisplayMedia()` called from `eval` is a real share (see Rules: only when the person at the desktop expects a picker). It takes the same path as Go Live: portal pick, Voxland's picker modal, venmic, and an audio track. Nothing reaches a Discord call. Feature recipes live in `features/`, indexed in `features/README.md`.
 

@@ -11,12 +11,27 @@ import { evaluate, send, ws } from "./client.mjs";
 
 const [command, arg, arg2, arg3] = process.argv.slice(2);
 
-// accepts a DOMRect (its fields are getters, which returnByValue drops) and rejects anything without a visible area
+// A rect expression is one JS expression yielding {x,y,width,height} in CSS px or a DOMRect (whose fields are getters,
+// which returnByValue would drop). The result is clipped to the viewport; null means nothing of it is visible.
 async function readRect(expression) {
-    const r = await evaluate(
-        `(async () => { const r = await (${expression}); return r && { x: r.x, y: r.y, width: r.width, height: r.height }; })()`
-    ).catch(() => null);
+    const r = await evaluate(`(async () => {
+        const r = await (${expression});
+        if (!r) return null;
+        const x = Math.max(r.x, 0), y = Math.max(r.y, 0);
+        return { x, y, width: Math.min(r.x + r.width, innerWidth) - x, height: Math.min(r.y + r.height, innerHeight) - y };
+    })()`);
     return r && Number.isFinite(r.x) && Number.isFinite(r.y) && r.width > 0 && r.height > 0 ? r : null;
+}
+
+// The surface's area while a frame painted, in that frame's device px (scale = device px per CSS px): the frame painted between the rect samples
+// before and after it, so only their overlap was covered for the whole time. Rounds inward; null if under 2px.
+function visibleBox(before, after, frame, scale) {
+    if (!before || !after) return null;
+    const x = Math.ceil(Math.max(before.x, after.x) * scale);
+    const y = Math.ceil(Math.max(before.y, after.y) * scale);
+    const right = Math.min(Math.floor(Math.min(before.x + before.width, after.x + after.width) * scale), frame.width);
+    const bottom = Math.min(Math.floor(Math.min(before.y + before.height, after.y + after.height) * scale), frame.height);
+    return right - x >= 2 && bottom - y >= 2 ? { x, y, width: right - x, height: bottom - y } : null;
 }
 
 if (command === "eval") {
@@ -43,6 +58,8 @@ if (command === "eval") {
     const { join } = await import("path");
 
     const cssWidth = await evaluate("innerWidth");
+    const sampleRect = () => (arg3 ? readRect(arg3).catch(() => null) : null);
+    const firstSample = await sampleRect();
     const frameDir = mkdtempSync(join(tmpdir(), "cdp-record-"));
     const frames = [];
     const onFrame = ({ data: raw }) => {
@@ -52,40 +69,42 @@ if (command === "eval") {
         const file = join(frameDir, `${String(frames.length).padStart(5, "0")}.png`);
         const png = Buffer.from(data, "base64");
         writeFileSync(file, png);
-        const rect = arg3 ? readRect(arg3) : null;
-        frames.push({ file, time: metadata.timestamp, width: png.readUInt32BE(16), height: png.readUInt32BE(20), rect });
+        frames.push({ file, time: metadata.timestamp, width: png.readUInt32BE(16), height: png.readUInt32BE(20), rect: sampleRect() });
         send("Page.screencastFrameAck", { sessionId }).catch(() => {});
     };
     try {
         ws.addEventListener("message", onFrame);
         await send("Page.startScreencast", { format: "png", everyNthFrame: 1 });
         await new Promise(resolve => setTimeout(resolve, Number(arg2 ?? 10) * 1000));
-        await send("Page.stopScreencast");
-        const stopTime = Date.now() / 1000;
         ws.removeEventListener("message", onFrame);
-
-        // frames arrive only when the page repaints, so each one is held until the next
-        for (const [i, f] of frames.entries()) {
-            f.rect = await f.rect;
-            f.duration = Math.max((frames[i + 1]?.time ?? stopTime) - f.time, 0.001);
-        }
-        // a frame painted while the surface was absent shows only what lies behind it
-        const kept = arg3 ? frames.filter(f => f.rect) : frames;
+        const stopTime = Date.now() / 1000;
+        await send("Page.stopScreencast");
         if (!frames.length) throw new Error("no frames: the page did not repaint while recording");
+
+        let previous = firstSample;
+        for (const [i, f] of frames.entries()) {
+            // frames arrive only when the page repaints, so each one is held until the next
+            f.duration = Math.max((frames[i + 1]?.time ?? stopTime) - f.time, 0.001);
+            const sample = await f.rect;
+            f.box = arg3 ? visibleBox(previous, sample, f, f.width / cssWidth) : { x: 0, y: 0, width: f.width, height: f.height };
+            previous = sample;
+        }
+        const kept = frames.filter(f => f.box);
         if (!kept.length) throw new Error("the crop rect never resolved; refusing to write an uncropped recording");
 
-        let crop = null;
-        if (arg3) {
-            const left = Math.max(0, Math.min(...kept.map(f => f.rect.x)));
-            const top = Math.max(0, Math.min(...kept.map(f => f.rect.y)));
-            const right = Math.max(...kept.map(f => f.rect.x + f.rect.width));
-            const bottom = Math.max(...kept.map(f => f.rect.y + f.rect.height));
-            // the rect is in CSS px; frames are device px, which differ under zoom or a scaled output
-            const scale = kept[0].width / cssWidth;
-            crop = { x: left * scale, y: top * scale };
-            crop.width = Math.min((right - left) * scale, kept[0].width - crop.x);
-            crop.height = Math.min((bottom - top) * scale, kept[0].height - crop.y);
-            if (!(crop.width >= 2 && crop.height >= 2)) throw new Error("the crop rect lies outside the page");
+        // every frame is cut to its own box and padded to the union, so nothing outside the surface is ever shown
+        const union = {
+            x: Math.min(...kept.map(f => f.box.x)),
+            y: Math.min(...kept.map(f => f.box.y)),
+            right: Math.max(...kept.map(f => f.box.x + f.box.width)),
+            bottom: Math.max(...kept.map(f => f.box.y + f.box.height))
+        };
+        for (const f of kept) {
+            const { x, y, width, height } = f.box;
+            const masked = f.file.replace(/\.png$/, "-masked.png");
+            const pad = `pad=${union.right - union.x}:${union.bottom - union.y}:${x - union.x}:${y - union.y}:black`;
+            execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-i", f.file, "-vf", `crop=${width}:${height}:${x}:${y},${pad}`, masked]);
+            f.file = masked;
         }
 
         const list = kept.map(f => `file '${f.file}'\nduration ${f.duration}`).join("\n");
@@ -101,7 +120,7 @@ if (command === "eval") {
             "-i",
             join(frameDir, "list.txt"),
             "-vf",
-            `${crop ? `crop=${Math.round(crop.width)}:${Math.round(crop.height)}:${Math.round(crop.x)}:${Math.round(crop.y)},` : ""}fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`,
+            "fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
             "-c:v",
             "libx264",
             arg

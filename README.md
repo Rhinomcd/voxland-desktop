@@ -85,8 +85,7 @@ Visit https://vesktop.dev/install
 You need to have the following dependencies installed:
 
 - [Git](https://git-scm.com/downloads)
-- [Node.js](https://nodejs.org/en/download)
-- pnpm: `npm install --global pnpm`
+- [Vite+](https://viteplus.dev/guide/) (`vp`), which also manages Node.js and the package manager
 
 Packaging will create builds in the dist/ folder
 
@@ -95,19 +94,19 @@ git clone https://github.com/Vencord/Vesktop
 cd Vesktop
 
 # Install Dependencies
-pnpm i
+vp install
 
 # Either run it without packaging
-pnpm start
+vp run start
 
 # Or package (will build packages for your OS)
-pnpm package
+vp run package
 
 # Or only build the Linux Pacman package
-pnpm package --linux pacman
+vp run package --linux pacman
 
 # Or package to a directory only
-pnpm package:dir
+vp run package:dir
 ```
 
 ## Building LibVesktop from Source
@@ -119,5 +118,5 @@ If you want to build it from source:
 1. Install build dependencies:
     - Debian/Ubuntu: `apt install build-essential python3 curl pkg-config libglib2.0-dev`
     - Fedora: `dnf install @c-development @development-tools python3 curl pkgconf-pkg-config glib2-devel`
-2. Run `pnpm buildLibVesktop`
+2. Run `vp run buildLibVesktop`
 3. From now on, building Vesktop will use your own build

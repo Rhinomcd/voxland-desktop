@@ -10,7 +10,7 @@ The app is an Electron shell around discord.com. Screen share on Wayland goes th
 ## Rules for Ryan's desktop
 
 - Never open the interactive portal picker. Ryan's `custom_picker_binary` is `~/.local/bin/xdph-picker`, which skips the prompt for each window title queued in `~/.local/state/obs-runescape/pick-queue`. Queue exactly one title per share request, right before the request. obs-runescape uses the same queue, so check it is empty first.
-- Go Live (starting capture) makes a second portal request, so queue two titles per share that you take live, or the second one opens the interactive picker. Prefer proving UI without sharing at all: `Vesktop.Components.ScreenShare.openScreenSharePicker(screens, true, target)` renders the picker from fixtures with no portal request.
+- A real share makes two or three portal requests (thumbnail, capture start, sometimes a renegotiation), and the queue can't predict how many. Any request beyond the queued titles opens the interactive picker on Ryan's screen. Prove UI with fixtures instead: `Vesktop.Components.ScreenShare.openScreenSharePicker(screens, true, target)` renders the picker with no portal request. Drive a real share only after telling Ryan in the thread, and kill any `hyprland-preview-share-picker` your run spawned (`pgrep -a -x hyprland-previe`).
 - If a share request gets cancelled, do not retry it. Run `stop.sh`.
 - Sharing a whole monitor has no queue path. Ask Ryan in the thread before driving that case.
 

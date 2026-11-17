@@ -4,7 +4,8 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=${VOXLAND_REPO:-$(git -C "$here" rev-parse --show-toplevel)}
-state=${VOXLAND_VERIFY_DIR:-$HOME/.cache/voxland-verify}
+state=$(realpath -m "${VOXLAND_VERIFY_DIR:-$HOME/.cache/voxland-verify}")
+export VOXLAND_VERIFY_DIR=$state
 port=${VOXLAND_CDP_PORT:-9447}
 
 # shellcheck source=pid.sh
@@ -38,6 +39,7 @@ move_to_headless_output() {
 
 mkdir -p -m 700 "$state/config" "$state/evidence"
 if [[ ! -d $state/config/vesktop ]]; then
+    [[ -d ~/.config/vesktop ]] || { echo "no ~/.config/vesktop to copy; log in once with an installed Vesktop" >&2; exit 1; }
     rm -rf "$state/config/vesktop.partial"
     cp -r ~/.config/vesktop "$state/config/vesktop.partial"
     rm -f "$state/config/vesktop.partial/sessionData/"Singleton*
@@ -48,6 +50,7 @@ fi
 cd "$repo"
 XDG_CONFIG_HOME=$state/config setsid env -u VENCORD_USER_DATA_DIR node_modules/.bin/electron --remote-debugging-port="$port" "$@" . >"$state/app.log" 2>&1 &
 echo $! >"$state/pid"
+trap 'code=$?; [[ $code -eq 0 ]] || "$here/stop.sh"; exit $code' EXIT
 
 pid=$(cat "$state/pid")
 # the main window is shown only once Discord has loaded and the splash page is gone
@@ -63,5 +66,4 @@ for _ in $(seq 60); do
 done
 echo "discord page never loaded; stopping it. Log tail ($state/app.log):" >&2
 tail -n 20 "$state/app.log" >&2
-"$here/stop.sh"
 exit 1

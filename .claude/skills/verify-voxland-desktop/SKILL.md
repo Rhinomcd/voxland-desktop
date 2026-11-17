@@ -21,7 +21,7 @@ The app is an Electron shell around discord.com. Screen share on Wayland goes th
 
 If it exits non-zero it has already stopped the instance; read the log tail it prints.
 
-On Hyprland it creates a headless output, `voxverify`, at 20000,20000 and moves the dev window onto it, so the window renders and animates without appearing on a physical screen; `stop.sh` removes the output. Extra arguments go to Electron. `VOXLAND_REPO=<worktree>` builds and runs another checkout; `VOXLAND_VERIFY_DIR` gives it its own profile dir.
+On Hyprland it creates a headless output, `voxverify`, at 20000,20000 and moves the dev window onto it once Discord has loaded, so the window renders and animates off the physical screens. The splash shows on the current workspace while Discord loads, and the main window for up to a second before the move; `stop.sh` removes the output. Extra arguments go to Electron. `VOXLAND_REPO=<worktree>` builds and runs another checkout; `VOXLAND_VERIFY_DIR` gives it its own profile dir.
 
 On first launch it copies `~/.config/vesktop` into `$VOXLAND_VERIFY_DIR/config` and points `XDG_CONFIG_HOME` at the copy, so the dev build starts logged in and runs beside an installed Vesktop. `VOXLAND_CDP_PORT` overrides port 9447.
 
@@ -40,13 +40,13 @@ node .claude/skills/verify-voxland-desktop/cdp.mjs eval 'typeof VesktopNative'  
 C=.claude/skills/verify-voxland-desktop/cdp.mjs
 node $C eval '<js expression, awaited>'
 node $C click 'Go Live'                     # last visible button with that exact text
-node $C screenshot ~/.cache/voxland-verify/evidence/x.png
+node $C screenshot ~/.cache/voxland-verify/evidence/x.png '<js returning {x,y,width,height}>'   # cropped to the rect
 node $C record out.mp4 10 '<js returning {x,y,width,height}>'   # run in the background, drive from another shell
 ```
 
 `picker-shots.mjs <outDir> ['<window title>']` renders the screen-share picker in five states (window, quiet window, screen, unknown, override open) from fixtures and saves each one cropped to the modal.
 
-`navigator.mediaDevices.getDisplayMedia()` called from `eval` takes the same path as Go Live: portal pick, Voxland's picker modal, venmic, and an audio track. Nothing reaches a Discord call. Feature recipes live in `features/`, indexed in `features/README.md`.
+`navigator.mediaDevices.getDisplayMedia()` called from `eval` is a real share (see Rules: only when the person at the desktop expects a picker). It takes the same path as Go Live: portal pick, Voxland's picker modal, venmic, and an audio track. Nothing reaches a Discord call. Feature recipes live in `features/`, indexed in `features/README.md`.
 
 ## Evidence
 

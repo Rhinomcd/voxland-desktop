@@ -1,6 +1,6 @@
 #!/bin/bash
 # Stops the instance launch.sh started. Keeps $state/evidence; pass --purge to also delete the copied profile.
-state=${VOXLAND_VERIFY_DIR:-$HOME/.cache/voxland-verify}
+state=$(realpath -m "${VOXLAND_VERIFY_DIR:-$HOME/.cache/voxland-verify}")
 # shellcheck source=pid.sh
 source "$(dirname "$0")/pid.sh"
 if pid=$(running_pid); then

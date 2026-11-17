@@ -6,18 +6,8 @@
 
 import "./screenSharePicker.css";
 import { classNameFactory } from "@vencord/types/api/Styles";
-import {
-    Button,
-    Card,
-    CogWheel,
-    FormSwitch,
-    Heading,
-    Margins,
-    Paragraph,
-    Span,
-    TextButton
-} from "@vencord/types/components";
-import { Logger, useAwaiter } from "@vencord/types/utils";
+import { Button, Card, CogWheel, FormSwitch, Heading, Margins, Paragraph, Span } from "@vencord/types/components";
+import { classes, Logger, useAwaiter } from "@vencord/types/utils";
 import { onceReady } from "@vencord/types/webpack";
 import {
     closeModal,
@@ -376,9 +366,9 @@ function StreamSettingsUi({
                         )}
                     </section>
                 </div>
-
-                {isLinux && <AudioPickerLinux {...audio} />}
             </Card>
+
+            {isLinux && <AudioPickerLinux {...audio} />}
         </div>
     );
 }
@@ -439,21 +429,26 @@ function describeAudioChoice(choice: AudioChoice, target: CaptureTarget | null, 
     switch (choice.kind) {
         case "none":
             return target
-                ? { title: "No audio", detail: "Your stream will be silent." }
-                : { title: "No audio", detail: "Couldn't tell what you're sharing, so pick its audio below." };
+                ? { title: "No audio", detail: "Your stream will be silent" }
+                : {
+                      title: "No audio",
+                      detail: "Couldn't tell what you're sharing"
+                  };
         case "system":
             return {
                 title: "All system audio",
-                detail: choice.exclude.length ? `Except Discord and ${labels(choice.exclude)}.` : "Except Discord."
+                detail: choice.exclude.length
+                    ? `Everything except Discord and ${labels(choice.exclude)}`
+                    : "Everything except Discord"
             };
         case "apps":
-            return { title: labels(choice.apps), detail: "Chosen manually." };
+            return { title: labels(choice.apps), detail: "Chosen by you" };
         case "window": {
             const windowApps = appsOfWindow(target, apps);
             const windowLabel = target?.kind === "window" ? target.label : "";
             return windowApps.length
-                ? { title: labels(windowApps), detail: "From the window you're sharing." }
-                : { title: windowLabel, detail: "From the window you're sharing, once it plays sound." };
+                ? { title: labels(windowApps), detail: "From the window you're sharing" }
+                : { title: windowLabel, detail: "From the window you're sharing, once it plays sound" };
         }
     }
 }
@@ -471,8 +466,35 @@ interface AudioPickerProps {
     setChoice: (choice: AudioChoice) => void;
 }
 
+function SpeakerIcon({ muted }: { muted: boolean }) {
+    return (
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <path
+                d={
+                    muted
+                        ? "M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a9 9 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z"
+                        : "M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06A9 9 0 0 0 14 3.23z"
+                }
+            />
+        </svg>
+    );
+}
+
 function AudioPickerLinux({ list, target, choice, setChoice }: AudioPickerProps) {
-    const [editing, setEditing] = useState(!target);
+    return (
+        <>
+            <Heading tag="h4" className={classes(Margins.top16, Margins.bottom8)}>
+                Audio
+            </Heading>
+            <Card className={cl("card", "audio-card")}>
+                <AudioPickerLinuxBody list={list} target={target} choice={choice} setChoice={setChoice} />
+            </Card>
+        </>
+    );
+}
+
+function AudioPickerLinuxBody({ list, target, choice, setChoice }: AudioPickerProps) {
+    const [editing, setEditing] = useState(false);
     const [ignorePulseWarning, setIgnorePulseWarning] = useState(false);
 
     if (list && !list.ok && list.isGlibCxxOutdated) {
@@ -516,6 +538,7 @@ function AudioPickerLinux({ list, target, choice, setChoice }: AudioPickerProps)
 
     const apps = list?.ok ? list.apps : [];
     const { title, detail } = describeAudioChoice(choice, target, apps);
+    const needsChoice = choice.kind === "none" && !target;
 
     const sourceOptions: { label: string; value: AudioOption }[] = [
         ...(target?.kind === "window" && target.pids.length
@@ -545,22 +568,28 @@ function AudioPickerLinux({ list, target, choice, setChoice }: AudioPickerProps)
         openModal(props => <AudioSettingsModal modalProps={props} close={() => props.onClose()} />);
 
     return (
-        <section className={cl("audio-picker")}>
-            <Heading tag="h5" className={Margins.bottom8}>
-                Audio
-            </Heading>
-            <div className={cl("audio-summary")}>
-                <div>
-                    <Paragraph className={cl("audio-title")}>{title}</Paragraph>
-                    <Paragraph className={cl("audio-detail")}>{detail}</Paragraph>
+        <>
+            <div className={cl("audio-row")}>
+                <div className={cl("audio-icon")} data-muted={choice.kind === "none"}>
+                    <SpeakerIcon muted={choice.kind === "none"} />
                 </div>
-                <TextButton variant="link" onClick={() => setEditing(e => !e)}>
-                    {editing ? "Done" : "Change"}
-                </TextButton>
+                <div className={cl("audio-text")}>
+                    <Paragraph weight="semibold">{title}</Paragraph>
+                    <Paragraph size="sm" className={cl("audio-detail")}>
+                        {detail}
+                    </Paragraph>
+                </div>
+                <Button
+                    variant={needsChoice && !editing ? "primary" : "secondary"}
+                    size="small"
+                    onClick={() => setEditing(e => !e)}
+                >
+                    {editing ? "Done" : needsChoice ? "Choose audio" : "Change"}
+                </Button>
             </div>
 
             {editing && (
-                <>
+                <div className={cl("audio-panel")}>
                     <div className={cl("audio-sources")}>
                         <section>
                             <Heading tag="h5" className={Margins.bottom8}>
@@ -594,20 +623,24 @@ function AudioPickerLinux({ list, target, choice, setChoice }: AudioPickerProps)
                                         popoutPosition="top"
                                         closeOnSelect={false}
                                         renderOptionLabel={o => o.label}
+                                        placeholder="Nothing else"
                                     />
                                 </SimpleErrorBoundary>
                             </section>
                         )}
-                    </div>
-                    <div className={cl("settings-buttons")}>
-                        <Button variant="secondary" onClick={openSettings} className={cl("settings-button")}>
+                        <Button
+                            variant="secondary"
+                            size="small"
+                            onClick={openSettings}
+                            className={cl("settings-button", "audio-settings-button")}
+                        >
                             <CogWheel className={cl("settings-button-icon")} />
                             Audio Settings
                         </Button>
                     </div>
-                </>
+                </div>
             )}
-        </section>
+        </>
     );
 }
 

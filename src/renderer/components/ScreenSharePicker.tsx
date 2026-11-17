@@ -412,14 +412,16 @@ function defaultAudioChoice(target: CaptureTarget | null): AudioChoice {
     return { kind: "none" };
 }
 
-function toAudioRequest(choice: AudioChoice): AudioRequest {
+function toAudioRequest(choice: AudioChoice, target: CaptureTarget | null): AudioRequest {
     switch (choice.kind) {
+        case "none":
+            return choice;
         case "system":
             return { kind: "system", exclude: choice.exclude.map(a => a.id) };
         case "apps":
             return { kind: "apps", apps: choice.apps.map(a => a.id) };
-        default:
-            return choice;
+        case "window":
+            return target?.kind === "window" ? { kind: "window", window: target.window } : { kind: "none" };
     }
 }
 
@@ -666,7 +668,8 @@ function ModalComponent({
     });
     const [pickedAudio, setAudioChoice] = useState<AudioChoice>();
     // Voxland's own grid (X11) tells screens from windows; the portal (Wayland) needs the picker hook
-    const resolvedTarget = target ?? (selected?.startsWith("screen:") ? { kind: "screen" as const } : null);
+    const resolvedTarget =
+        target ?? (!skipPicker && selected?.startsWith("screen:") ? { kind: "screen" as const } : null);
     const audioChoice = pickedAudio ?? defaultAudioChoice(resolvedTarget);
     const audioList = useAudioApps(isLinux && !!selected);
     useVesktopState().screenshareQuality ??= {
@@ -675,7 +678,7 @@ function ModalComponent({
     };
 
     function handleGoLive() {
-        const pick = { ...settings, audioRequest: isLinux ? toAudioRequest(audioChoice) : undefined };
+        const pick = { ...settings, audioRequest: isLinux ? toAudioRequest(audioChoice, resolvedTarget) : undefined };
         currentSettings = pick;
         submit({ id: selected!, ...pick });
         close();
@@ -691,7 +694,11 @@ function ModalComponent({
                 {
                     text: showGoBack ? "Back" : "Cancel",
                     variant: "secondary",
-                    onClick: () => (showGoBack ? setSelected(void 0) : close())
+                    onClick: () => {
+                        if (!showGoBack) return close();
+                        setSelected(void 0);
+                        setAudioChoice(undefined);
+                    }
                 },
                 {
                     text: "Go Live",

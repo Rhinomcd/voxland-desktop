@@ -16,4 +16,4 @@ printf '%s\n' "$output"
 selection=$(printf '%s\n' "$output" | grep -m1 '\[SELECTION\]') || exit 0
 [ -n "$XDG_RUNTIME_DIR" ] || exit 0
 record="$XDG_RUNTIME_DIR/voxland-share-pick"
-printf '%s\n%s' "$selection" "$XDPH_WINDOW_SHARING_LIST" >"$record.tmp" && mv "$record.tmp" "$record"
+printf '%s\n%s' "$selection" "$XDPH_WINDOW_SHARING_LIST" >"$record.$$" && mv "$record.$$" "$record"

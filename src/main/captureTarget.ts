@@ -16,9 +16,6 @@ const execFileAsync = promisify(execFile);
 /** Written by scripts/linux/voxland-record-share-pick, which wraps the xdg-desktop-portal-hyprland picker. */
 const PICK_FILE = process.env.XDG_RUNTIME_DIR && join(process.env.XDG_RUNTIME_DIR, "voxland-share-pick");
 
-/** The window chosen in the latest share request; venmic re-resolves its process tree while sharing. */
-export let sharedWindowPid: number | null = null;
-
 export interface HyprlandWindow {
     address: string;
     class: string;
@@ -89,18 +86,15 @@ export function parsePortalPick(record: string): PortalPick | null {
     if (marker === -1) return null;
 
     const selection = firstLine.slice(marker + "[SELECTION]".length).replace(/^[^/]*\//, "");
-    const windows = (newline === -1 ? "" : record.slice(newline + 1))
-        .split("[HA>]")
-        .filter(Boolean)
-        .map(entry => {
-            const [handle, windowClass = "", title = "", address] = entry.split(/\[H[CTE]>\]/);
-            return {
-                handle: handle.trim(),
-                class: windowClass,
-                title,
-                address: address && /^\d+$/.test(address) && address !== "0" ? BigInt(address) : undefined
-            };
-        });
+    const list = newline === -1 ? "" : record.slice(newline + 1);
+    const windows = [...list.matchAll(/(\d+)\[HC>\](.*?)\[HT>\](.*?)\[HE>\](?:(\d+)\[HA>\])?/gs)].map(
+        ([, handle, windowClass, title, address]) => ({
+            handle,
+            class: windowClass,
+            title,
+            address: address && address !== "0" ? BigInt(address) : undefined
+        })
+    );
 
     return { selection, windows };
 }
@@ -125,7 +119,18 @@ function findPickedWindow(pick: PortalPick, windows: HyprlandWindow[]) {
  * so this relies on the picker hook having recorded the choice after `since`.
  */
 export async function readCaptureTarget(since: number): Promise<CaptureTarget | null> {
-    sharedWindowPid = null;
+    try {
+        return await resolvePick(since);
+    } catch (e) {
+        console.error("Failed to resolve the portal pick", e);
+        return null;
+    }
+}
+
+// xdph selections: screen:<output>, region:<output>@..., workspace:<name>, workspace-id:<id>, window:<handle>
+const WHOLE_SCREEN_SELECTIONS = ["screen:", "region:", "workspace:", "workspace-id:"];
+
+async function resolvePick(since: number): Promise<CaptureTarget | null> {
     if (!PICK_FILE) return null;
 
     const file = await lstat(PICK_FILE).catch(() => null);
@@ -133,12 +138,17 @@ export async function readCaptureTarget(since: number): Promise<CaptureTarget | 
 
     const pick = parsePortalPick(await readFile(PICK_FILE, "utf8"));
     if (!pick) return null;
-    if (!pick.selection.startsWith("window:")) return { kind: "screen" };
+    if (WHOLE_SCREEN_SELECTIONS.some(prefix => pick.selection.startsWith(prefix))) return { kind: "screen" };
+    if (!pick.selection.startsWith("window:")) return null;
 
     const [windows, parents] = await Promise.all([getHyprlandWindows(), getParentPids()]);
     const window = findPickedWindow(pick, windows);
     if (!window || window.pid <= 1) return null;
 
-    sharedWindowPid = window.pid;
-    return { kind: "window", label: window.title || window.class, pids: withDescendants(window.pid, parents) };
+    return {
+        kind: "window",
+        label: window.title || window.class,
+        window: { pid: window.pid, address: window.address },
+        pids: withDescendants(window.pid, parents)
+    };
 }

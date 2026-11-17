@@ -51,7 +51,7 @@ screencopy {
 }
 ```
 
-Without the hook, every share defaults to all system audio.
+Without the hook, Voxland cannot tell what you shared, so the stream starts without audio and the picker asks you to choose it.
 
 ---
 

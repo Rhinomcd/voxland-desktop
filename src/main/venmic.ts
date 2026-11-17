@@ -14,13 +14,7 @@ import { IpcEvents } from "shared/IpcEvents";
 import { STATIC_DIR } from "shared/paths";
 import type { AudioApp, AudioAppList, AudioRequest } from "shared/screenShareAudio";
 
-import {
-    getHyprlandWindows,
-    getParentPids,
-    type HyprlandWindow,
-    sharedWindowPid,
-    withDescendants
-} from "./captureTarget";
+import { getHyprlandWindows, getParentPids, type HyprlandWindow, withDescendants } from "./captureTarget";
 import { Settings } from "./settings";
 import { handle } from "./utils/ipcWrappers";
 
@@ -253,34 +247,44 @@ async function listAndRemember(venmic: PatchBayType) {
     return apps;
 }
 
-async function resolveLinkData(request: AudioRequest, venmic: PatchBayType): Promise<LinkData | null> {
-    const apps = await listAndRemember(venmic);
-    const current = new Map(apps.map(a => [a.id, a]));
+// venmic treats an empty include list as "everything", so silence needs a matcher no node has
+const MATCH_NOTHING: Node[] = [{ "node.name": "voxland-match-nothing" }];
 
-    // an app that went quiet keeps its pid matchers; its client ids may be reused by other apps by now
+function sortedMatches(matches: Node[]) {
+    return uniqueMatches(matches).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+}
+
+async function resolveLinkData(request: AudioRequest, venmic: PatchBayType): Promise<LinkData> {
+    const [apps, parents] = await Promise.all([listAndRemember(venmic), getParentPids()]);
+    const current = new Map(apps.map(a => [a.id, a]));
+    const isAlive = (m: Node) => !m["application.process.id"] || parents.has(Number(m["application.process.id"]));
+
+    // an app that went quiet keeps the pid matchers of its live processes; its client ids may belong to others by now
     const matchersOf = (ids: string[]) =>
-        ids.flatMap(id => current.get(id)?.match ?? knownApps.get(id)?.match.filter(m => !m["client.id"]) ?? []);
+        ids.flatMap(
+            id => current.get(id)?.match ?? knownApps.get(id)?.match.filter(m => !m["client.id"] && isAlive(m)) ?? []
+        );
+    const including = (matches: Node[]) =>
+        buildLinkData({ include: matches.length ? sortedMatches(matches) : MATCH_NOTHING });
 
     switch (request.kind) {
         case "none":
-            return null;
+            return including([]);
         case "system":
-            return buildLinkData({ exclude: matchersOf(request.exclude) });
-        case "apps": {
-            // venmic treats an empty include list as "everything"
-            const include = matchersOf(request.apps);
-            return include.length ? buildLinkData({ include }) : null;
-        }
+            return buildLinkData({ exclude: sortedMatches(matchersOf(request.exclude)) });
+        case "apps":
+            return including(matchersOf(request.apps));
         case "window": {
-            if (!sharedWindowPid) return null;
-            const pids = withDescendants(sharedWindowPid, await getParentPids());
-            const windowApps = apps.filter(a => a.pids.some(pid => pids.includes(pid)));
-            return buildLinkData({
-                include: [
-                    ...windowApps.flatMap(a => a.match),
-                    ...pids.map(pid => ({ "application.process.id": String(pid) }))
-                ]
-            });
+            const { pid, address } = request.window;
+            const stillOpen = (await getHyprlandWindows()).some(w => w.address === address && w.pid === pid);
+            if (!stillOpen) return including([]);
+
+            const pids = withDescendants(pid, parents);
+            const windowApps = apps.filter(a => a.pids.some(p => pids.includes(p)));
+            return including([
+                ...windowApps.flatMap(a => a.match),
+                ...pids.map(p => ({ "application.process.id": String(p) }))
+            ]);
         }
     }
 }
@@ -288,19 +292,14 @@ async function resolveLinkData(request: AudioRequest, venmic: PatchBayType): Pro
 let activeRequest: AudioRequest | null = null;
 let activeLink = "";
 let refreshTimer: NodeJS.Timeout | undefined;
+let generation = 0;
 
-/** Re-resolved on a timer so shares follow processes and PipeWire clients that appear after Go Live. */
 async function applyActiveRequest(venmic: PatchBayType) {
     const request = activeRequest;
     if (!request) return;
 
     const data = await resolveLinkData(request, venmic);
     if (request !== activeRequest) return;
-
-    if (!data) {
-        stopVirtmic(venmic);
-        return;
-    }
 
     const serialized = JSON.stringify(data);
     if (serialized !== activeLink) {
@@ -309,11 +308,12 @@ async function applyActiveRequest(venmic: PatchBayType) {
     }
 }
 
-function stopVirtmic(venmic: PatchBayType) {
-    clearInterval(refreshTimer);
-    activeRequest = null;
-    activeLink = "";
-    venmic.unlink();
+/** Re-resolves while sharing so audio follows processes and PipeWire clients that appear after Go Live. */
+function scheduleRefresh(venmic: PatchBayType, gen: number) {
+    refreshTimer = setTimeout(async () => {
+        await applyActiveRequest(venmic).catch(console.error);
+        if (gen === generation) scheduleRefresh(venmic, gen);
+    }, 3000);
 }
 
 handle(IpcEvents.VIRT_MIC_LIST, async (): Promise<AudioAppList> => {
@@ -327,14 +327,13 @@ handle(IpcEvents.VIRT_MIC_START, async (_, request: AudioRequest) => {
     const venmic = obtainVenmic();
     if (!venmic) return;
 
-    clearInterval(refreshTimer);
+    clearTimeout(refreshTimer);
+    const gen = ++generation;
     activeRequest = request;
     activeLink = "";
-    await applyActiveRequest(venmic);
+    await applyActiveRequest(venmic).catch(console.error);
 
-    if (activeRequest === request && request.kind !== "none") {
-        refreshTimer = setInterval(() => applyActiveRequest(venmic).catch(console.error), 3000);
-    }
+    if (gen === generation) scheduleRefresh(venmic, gen);
 });
 
 handle(IpcEvents.VIRT_MIC_UNMUTE, () => {
@@ -342,6 +341,9 @@ handle(IpcEvents.VIRT_MIC_UNMUTE, () => {
 });
 
 handle(IpcEvents.VIRT_MIC_STOP, () => {
-    const venmic = obtainVenmic();
-    if (venmic) stopVirtmic(venmic);
+    clearTimeout(refreshTimer);
+    generation++;
+    activeRequest = null;
+    activeLink = "";
+    obtainVenmic()?.unlink();
 });

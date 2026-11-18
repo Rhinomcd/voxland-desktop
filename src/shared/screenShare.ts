@@ -6,7 +6,6 @@
 
 import type { AudioRequest } from "./screenShareAudio";
 
-/** What the screen-share picker returns to the main process. */
 export interface StreamPick {
     id: string;
     audio: boolean;

@@ -32,7 +32,12 @@ function setup() {
     return { session, virtmic, calls, emit };
 }
 
-const pick = (audioRequest?: AudioRequest) => ({ id: "screen:0", audio: true, audioRequest });
+const pick = (audioRequest?: AudioRequest, contentHint = "motion") => ({
+    id: "screen:0",
+    audio: true,
+    contentHint,
+    audioRequest
+});
 const system: AudioRequest = { kind: "system", exclude: [] };
 const apps: AudioRequest = { kind: "apps", apps: ["firefox"] };
 
@@ -105,5 +110,30 @@ describe("ScreenShareSession", () => {
         emit("STREAM_CLOSE", OWN_STREAM);
 
         expect(calls).toEqual(["stop"]);
+    });
+
+    it("reports the active pick's content hint until the session stops", async () => {
+        const { session } = setup();
+        expect(session.contentHint()).toBeUndefined();
+
+        await session.start(pick(system, "motion"));
+        expect(session.contentHint()).toBe("motion");
+
+        await session.start(pick(undefined, "detail"));
+        expect(session.contentHint()).toBe("detail");
+
+        await session.stop();
+        expect(session.contentHint()).toBeUndefined();
+    });
+
+    it("clears the content hint when its own stream closes, even without audio", async () => {
+        const { session, emit } = setup();
+        await session.start(pick(undefined, "detail"));
+
+        emit("STREAM_CLOSE", OTHER_STREAM);
+        expect(session.contentHint()).toBe("detail");
+
+        emit("STREAM_CLOSE", OWN_STREAM);
+        expect(session.contentHint()).toBeUndefined();
     });
 });

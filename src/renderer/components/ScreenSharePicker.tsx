@@ -40,8 +40,6 @@ interface Source {
     url: string;
 }
 
-export let currentSettings: StreamSettings | null = null;
-
 export function openScreenSharePicker(screens: Source[], skipPicker: boolean, target: CaptureTarget | null = null) {
     let didSubmit = false;
     return new Promise<StreamPick>((resolve, reject) => {
@@ -631,9 +629,8 @@ function ModalComponent({
     };
 
     function handleGoLive() {
-        const pick = { ...settings, audioRequest: isLinux ? toAudioRequest(audioChoice, resolvedTarget) : undefined };
-        currentSettings = pick;
-        submit({ id: selected!, ...pick });
+        const audioRequest = isLinux ? toAudioRequest(audioChoice, resolvedTarget) : undefined;
+        submit({ id: selected!, ...settings, audioRequest });
         close();
     }
 

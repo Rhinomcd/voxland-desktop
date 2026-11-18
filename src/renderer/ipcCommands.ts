@@ -55,7 +55,7 @@ onIpcCommand(IpcCommands.NAVIGATE_SETTINGS, () => {
 
 onIpcCommand(IpcCommands.GET_LANGUAGES, () => navigator.languages);
 
-const screenShareSession = createScreenShareSession(
+export const screenShareSession = createScreenShareSession(
     VesktopNative.virtmic,
     // Discord's modules load after this file, so look the dispatcher up on each call
     {

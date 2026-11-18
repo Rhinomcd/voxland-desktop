@@ -24,6 +24,7 @@ export interface StreamDispatcher {
 export interface ScreenShareSession {
     start(pick: StreamPick): Promise<void>;
     stop(): Promise<void>;
+    contentHint(): string | undefined;
 }
 
 export function createScreenShareSession(
@@ -31,38 +32,48 @@ export function createScreenShareSession(
     dispatcher: StreamDispatcher,
     currentUserId: () => string
 ): ScreenShareSession {
-    let listening = false;
+    let active: StreamPick | null = null;
+    let micLinked = false;
 
     // stream keys end in the streamer's user id
     const isOwnStream = (streamKey: string) => streamKey.split(":").at(-1) === currentUserId();
 
     const onUpdate: StreamEventHandler = ({ streamKey }) => {
-        if (isOwnStream(streamKey)) void virtmic.unmute();
+        if (micLinked && isOwnStream(streamKey)) void virtmic.unmute();
     };
     const onClose: StreamEventHandler = ({ streamKey }) => {
         if (isOwnStream(streamKey)) void stop();
     };
 
-    function stop() {
-        if (listening) {
-            dispatcher.unsubscribe("STREAM_UPDATE", onUpdate);
-            dispatcher.unsubscribe("STREAM_CLOSE", onClose);
-            listening = false;
-        }
+    function releaseMic() {
+        if (!micLinked) return;
+        micLinked = false;
         return virtmic.stop();
     }
 
-    async function start({ audioRequest }: StreamPick) {
-        if (!audioRequest) return;
-        if (audioRequest.kind === "none") return stop();
+    async function stop() {
+        if (active) {
+            dispatcher.unsubscribe("STREAM_UPDATE", onUpdate);
+            dispatcher.unsubscribe("STREAM_CLOSE", onClose);
+            active = null;
+        }
+        await releaseMic();
+    }
 
-        if (!listening) {
+    async function start(pick: StreamPick) {
+        if (!active) {
             dispatcher.subscribe("STREAM_UPDATE", onUpdate);
             dispatcher.subscribe("STREAM_CLOSE", onClose);
-            listening = true;
         }
+        active = pick;
+
+        const { audioRequest } = pick;
+        if (!audioRequest) return;
+        if (audioRequest.kind === "none") return releaseMic();
+
+        micLinked = true;
         await virtmic.start(audioRequest);
     }
 
-    return { start, stop };
+    return { start, stop, contentHint: () => active?.contentHint };
 }

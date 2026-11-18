@@ -48,7 +48,9 @@ A `<rect>` is one synchronous JS expression that yields `{x,y,width,height}` in 
 
 `picker-shots.mjs <outDir> ['<window title>']` renders the screen-share picker in five states (window, quiet window, screen, unknown, override open) from fixtures and saves each one cropped to the modal.
 
-`navigator.mediaDevices.getDisplayMedia()` called from `eval` is a real share (see Rules: only when the person at the desktop expects a picker). It takes the same path as Go Live: portal pick, Voxland's picker modal, venmic, and an audio track. Nothing reaches a Discord call. Feature recipes live in `features/`, indexed in `features/README.md`.
+`navigator.mediaDevices.getDisplayMedia()` called from `eval` is a real share (see Rules: only when the person at the desktop expects a picker). It takes the same path as Go Live: portal pick, Voxland's picker modal, venmic, and an audio track. Nothing reaches a Discord call.
+
+To drive the main-side display-media handler (`src/main/pickSource.ts`) without a portal, launch under XWayland: `env -u WAYLAND_DISPLAY XDG_SESSION_TYPE=x11 launch.sh --ozone-platform=x11`. Main then takes the list-picker strategy and Chromium uses its X11 capturer, so `getDisplayMedia()` from `eval` opens Voxland's source grid and no portal dialog. Close the modal with Escape; its Back button only returns to the grid. Feature recipes live in `features/`, indexed in `features/README.md`.
 
 ## Evidence
 

@@ -1,14 +1,17 @@
-<!--
-We do not accept PRs that were created by AI. You will be permanently blocked with no further warning if you submit AI generated PRs.
-Also do not use AI in communication, it makes me ill
--->
+<!-- Read the ground rules in README.md before opening a PR. -->
 
-## Describe your Changes
+## What and why
 
-## Screenshots (if applicable)
+## How you checked it
 
-## Checklist before submitting
+<!-- What you ran or clicked, and what you saw. UI changes need before-and-after screenshots. -->
 
-<!-- Hint: [x] this is how to check boxes -->
+## AI use
 
-- [ ] This pull request was written by me, and not an AI agent
+<!-- Models and tools used, or "none". -->
+
+## Checklist
+
+- [ ] One problem per PR
+- [ ] I can explain this change and will answer review myself
+- [ ] CodeRabbit and Macroscope findings are fixed or answered

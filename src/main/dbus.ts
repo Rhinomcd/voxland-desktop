@@ -4,17 +4,38 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { basename, dirname, join } from "path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { join } from "path";
 
 import { app } from "electron";
 import type { XDPGlobalShortcutsEvent } from "libvesktop";
 import { STATIC_DIR } from "shared/paths";
 
+import { DEV_APP_ID, pickAppId } from "./appId";
 import { IS_FLATPAK } from "./constants";
 
-// Name of our .desktop file, which portals and GNOME identify us by.
-// scripts/channel.sh names each channel's file after its install dir, e.g. voxland-nightly
-const APP_ID = process.env.FLATPAK_ID ?? (app.isPackaged ? basename(dirname(process.execPath)) : "voxland");
+const readFile = (path: string) => {
+    try {
+        return readFileSync(path, "utf8");
+    } catch {
+        return null;
+    }
+};
+
+const APP_ID = pickAppId({ env: process.env, packaged: app.isPackaged, execPath: process.execPath, readFile });
+
+// Portals only accept ids with a desktop file, so dev runs get a hidden one of their own instead of sharing stable's
+function ensureDevDesktopFile() {
+    const dir = join(process.env.XDG_DATA_HOME || join(app.getPath("home"), ".local/share"), "applications");
+    const file = join(dir, `${DEV_APP_ID}.desktop`);
+    if (existsSync(file)) return;
+
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+        file,
+        `[Desktop Entry]\nType=Application\nName=Voxland Dev\nExec=${process.execPath}\nNoDisplay=true\n`
+    );
+}
 
 let libVesktop: typeof import("libvesktop") | null = null;
 
@@ -24,7 +45,10 @@ function loadLibVesktop() {
             libVesktop = require(
                 join(STATIC_DIR, `dist/libvesktop-${process.arch}.node`)
             ) as typeof import("libvesktop");
-            if (!IS_FLATPAK) libVesktop.registerHostApp(APP_ID);
+            if (!IS_FLATPAK && APP_ID) {
+                if (APP_ID === DEV_APP_ID) ensureDevDesktopFile();
+                libVesktop.registerHostApp(APP_ID);
+            }
         }
     } catch (e) {
         console.error("Failed to load libvesktop:", e);
@@ -49,5 +73,5 @@ export function createXDPGlobalShortcuts(onEvent: (...args: XDPGlobalShortcutsEv
 }
 
 export function openGnomeAppSettings() {
-    return loadLibVesktop()?.openGnomeAppSettings(APP_ID) ?? false;
+    return (APP_ID && loadLibVesktop()?.openGnomeAppSettings(APP_ID)) ?? false;
 }

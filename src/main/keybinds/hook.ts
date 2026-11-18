@@ -9,6 +9,7 @@ import { KeyBind, KeybindStatus, ShortcutAction } from "shared/utils/keybind";
 import type { UiohookKeyboardEvent, UiohookMouseEvent } from "uiohook-napi";
 
 import { triggerAction } from "./actions";
+import { createBindTracker } from "./bindTracker";
 
 type Uiohook = typeof import("uiohook-napi");
 type InputEvent = UiohookKeyboardEvent | UiohookMouseEvent;
@@ -45,9 +46,8 @@ let uiohook: Uiohook | null = null;
 let keyNames = new Map<number, string>();
 let running = false;
 
-let binds: ActiveBind[] = [];
-const heldKeys = new Set<string>();
-const activeBinds = new Set<ActiveBind>();
+// Each bind presses its action as its own source, so two binds for one action don't release each other
+const tracker = createBindTracker<ActiveBind>((bind, active) => triggerAction(bind.action, active, bind));
 
 function toKeyName(uiohookName: string) {
     if (/^[A-Z]$/.test(uiohookName)) return "Key" + uiohookName;
@@ -64,52 +64,23 @@ function loadUiohook() {
     return uiohook;
 }
 
-function press(key: string) {
-    // Held keys repeat their keydown event
-    if (heldKeys.has(key)) return;
-    heldKeys.add(key);
-
-    // Other keys may be held too, so push to talk keeps working while moving in a game
-    for (const bind of binds) {
-        if (!activeBinds.has(bind) && bind.keys.includes(key) && bind.keys.every(k => heldKeys.has(k))) {
-            activeBinds.add(bind);
-            triggerAction(bind.action, true);
-        }
-    }
-}
-
-function release(key: string) {
-    heldKeys.delete(key);
-
-    for (const bind of activeBinds) {
-        if (bind.keys.includes(key)) {
-            activeBinds.delete(bind);
-            triggerAction(bind.action, false);
-        }
-    }
-}
-
-function releaseAll() {
-    for (const key of heldKeys) release(key);
-}
-
 // A modifier release can be missed, for example when the lock screen grabs input. The flags of later events tell us
 function syncModifiers(event: InputEvent, key?: string) {
     for (const [modifier, flag] of Object.entries(MODIFIER_FLAGS)) {
-        if (modifier !== key && heldKeys.has(modifier) && !event[flag]) release(modifier);
+        if (modifier !== key && tracker.isHeld(modifier) && !event[flag]) tracker.releaseKey(modifier);
     }
 }
 
 function onKeyDown(event: UiohookKeyboardEvent) {
     const key = keyNames.get(event.keycode);
     syncModifiers(event, key);
-    if (key) press(key);
+    if (key) tracker.press(key, event.keycode);
 }
 
 function onKeyUp(event: UiohookKeyboardEvent) {
     const key = keyNames.get(event.keycode);
     syncModifiers(event, key);
-    if (key) release(key);
+    if (key) tracker.release(key, event.keycode);
 }
 
 // 1 and 2 are left and right click, which we don't allow binding
@@ -121,13 +92,13 @@ const mouseKey = (event: UiohookMouseEvent) => {
 function onMouseDown(event: UiohookMouseEvent) {
     syncModifiers(event);
     const key = mouseKey(event);
-    if (key) press(key);
+    if (key) tracker.press(key, key);
 }
 
 function onMouseUp(event: UiohookMouseEvent) {
     syncModifiers(event);
     const key = mouseKey(event);
-    if (key) release(key);
+    if (key) tracker.release(key, key);
 }
 
 function start() {
@@ -148,7 +119,7 @@ function start() {
 }
 
 export function stopHook() {
-    releaseAll();
+    tracker.releaseAll();
     if (!running) return;
 
     uiohook!.uIOhook.stop();
@@ -158,8 +129,8 @@ export function stopHook() {
 
 /** Listens for the given binds, only running the input hook while there are any */
 export function setHookBinds(newBinds: KeyBind[]): Omit<KeybindStatus, "backend"> {
-    releaseAll();
-    binds = newBinds.filter((b): b is ActiveBind => b.enabled && b.action !== "unassigned" && b.keys.length > 0);
+    const binds = newBinds.filter((b): b is ActiveBind => b.enabled && b.action !== "unassigned" && b.keys.length > 0);
+    tracker.setBinds(binds);
 
     if (!binds.length) {
         stopHook();

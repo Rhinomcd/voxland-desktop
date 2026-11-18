@@ -10,6 +10,7 @@ import { KeybindStatus, ShortcutAction } from "shared/utils/keybind";
 import { IS_WAYLAND } from "../constants";
 import { AppEvents } from "../events";
 import { sendRendererCommand } from "../ipcCommands";
+import { createPressTracker } from "./pressTracker";
 
 let appLoaded = false;
 AppEvents.on("appLoaded", () => (appLoaded = true));
@@ -26,18 +27,27 @@ export function setStatus(newStatus: Omit<KeybindStatus, "backend">) {
 }
 
 // Events before Discord is loaded are dropped rather than queued, as they would all fire at once later
-export function triggerAction(action: ShortcutAction, pressed: boolean) {
+const presses = createPressTracker((action, pressed) => {
     if (!appLoaded) return;
 
     sendRendererCommand(IpcCommands.KEYBINDS_TRIGGER, { action, pressed }).catch(err =>
         console.error("Failed to trigger keybind action:", action, err)
     );
-}
+});
+
+/** Presses or releases an action on behalf of source. The action stays pressed while any source holds it */
+export const triggerAction = (action: ShortcutAction, pressed: boolean, source: unknown) =>
+    presses.set(action, pressed, source);
+
+export const { releaseSource } = presses;
+
+const COMMAND_SOURCE = "command";
 
 /** Runs a command parsed by parseShortcutCommand. If pressed is undefined, the action is pressed and released */
 export function runShortcutCommand({ action, pressed }: { action: ShortcutAction; pressed?: boolean }) {
-    if (pressed !== undefined) return triggerAction(action, pressed);
+    if (pressed !== undefined) return triggerAction(action, pressed, COMMAND_SOURCE);
 
-    triggerAction(action, true);
-    triggerAction(action, false);
+    const tap = Symbol("tap");
+    triggerAction(action, true, tap);
+    triggerAction(action, false, tap);
 }

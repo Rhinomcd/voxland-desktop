@@ -5,13 +5,14 @@
  */
 
 import type { XDPGlobalShortcuts, XDPGlobalShortcutsEvent } from "libvesktop";
-import { ACTION_DESCRIPTIONS, isShortcutAction, SHORTCUT_ACTIONS, ShortcutAction } from "shared/utils/keybind";
+import { ACTION_DESCRIPTIONS, isShortcutAction, SHORTCUT_ACTIONS } from "shared/utils/keybind";
 
 import { createXDPGlobalShortcuts, openGnomeAppSettings } from "../dbus";
-import { setStatus, status, triggerAction } from "./actions";
+import { releaseSource, setStatus, status, triggerAction } from "./actions";
+
+const PORTAL_SOURCE = "portal";
 
 let session: XDPGlobalShortcuts | null = null;
-const heldActions = new Set<ShortcutAction>();
 
 function onEvent(...event: XDPGlobalShortcutsEvent) {
     switch (event[0]) {
@@ -35,10 +36,7 @@ function onEvent(...event: XDPGlobalShortcutsEvent) {
             break;
         }
         case "shortcut":
-            if (!isShortcutAction(event[1])) break;
-            if (event[2]) heldActions.add(event[1]);
-            else heldActions.delete(event[1]);
-            triggerAction(event[1], event[2]);
+            if (isShortcutAction(event[1])) triggerAction(event[1], event[2], PORTAL_SOURCE);
             break;
         case "error":
             console.error("GlobalShortcuts portal error:", event[1]);
@@ -56,8 +54,7 @@ export function stopPortal() {
     session?.destroy();
     session = null;
     // The destroyed session never sends the release, so push to talk would stay held
-    for (const action of heldActions) triggerAction(action, false);
-    heldActions.clear();
+    releaseSource(PORTAL_SOURCE);
 }
 
 export function setPortalEnabled(enabled: boolean) {
@@ -71,7 +68,11 @@ export function setPortalEnabled(enabled: boolean) {
 
     setStatus({ portalState: "connecting" });
     try {
-        session = createXDPGlobalShortcuts(onEvent);
+        // Events queued before destroy() are still delivered after it, so drop those of a previous session
+        const created: XDPGlobalShortcuts | null = createXDPGlobalShortcuts((...event) => {
+            if (session === created) onEvent(...event);
+        });
+        session = created;
         if (!session) setStatus({ portalState: "unavailable", error: "Failed to load libvesktop" });
     } catch (err) {
         console.error("Failed to create GlobalShortcuts portal session:", err);

@@ -5,7 +5,7 @@
  */
 
 import { ipcMain, IpcMainEvent, IpcMainInvokeEvent, WebFrameMain } from "electron";
-import { DISCORD_HOSTNAMES } from "main/constants";
+import { DISCORD_HOSTNAMES } from "main/utils/isDiscordUrl";
 import { IpcEvents, UpdaterIpcEvents } from "shared/IpcEvents";
 
 export function validateSender(frame: WebFrameMain | null, event: string) {

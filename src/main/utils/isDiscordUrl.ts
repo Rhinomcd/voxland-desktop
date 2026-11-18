@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { DISCORD_HOSTNAMES } from "main/constants";
+export const DISCORD_HOSTNAMES = ["discord.com", "canary.discord.com", "ptb.discord.com"];
 
 export function isDiscordUrl(url: string | undefined) {
     if (!url || !URL.canParse(url)) return false;

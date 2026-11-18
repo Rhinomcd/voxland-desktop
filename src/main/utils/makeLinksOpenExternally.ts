@@ -5,7 +5,7 @@
  */
 
 import { BrowserWindow, shell } from "electron";
-import { DISCORD_HOSTNAMES } from "main/constants";
+import { DISCORD_HOSTNAMES } from "main/utils/isDiscordUrl";
 
 import { Settings } from "../settings";
 import { createOrFocusPopup, setupPopout } from "./popout";

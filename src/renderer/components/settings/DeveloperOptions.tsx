@@ -18,7 +18,7 @@ export const DeveloperOptionsButton: SettingsComponent = ({ settings }) => {
 function openDeveloperOptionsModal(settings: Settings) {
     openModal(props => (
         <Modal {...props} size="lg" title="Vesktop Developer Options">
-            <Heading tag="h4">Vencord Location</Heading>
+            <Heading tag="h4">Client Mod Location</Heading>
             <VencordLocationPicker settings={settings} />
 
             <Heading tag="h4" className={Margins.top16}>
@@ -41,7 +41,7 @@ const VencordLocationPicker: SettingsComponent = () => {
     return (
         <>
             <Paragraph>
-                Vencord files are loaded from{" "}
+                Client mod files are loaded from{" "}
                 {usingCustomVencordDir ? (
                     <TextButton
                         variant="link"
@@ -68,7 +68,7 @@ const VencordLocationPicker: SettingsComponent = () => {
                                 break;
                             case "invalid":
                                 showToast({
-                                    text: "You did not choose a valid Vencord install. Make sure you're selecting the dist dir!",
+                                    text: "You did not choose a valid client mod build. Make sure you're selecting the dist dir!",
                                     variant: "critical"
                                 });
                                 break;

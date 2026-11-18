@@ -38,8 +38,14 @@ function runCommand(line: string) {
  * Every line gets a reply line, either "ok" or "error: <reason>"
  */
 export function initSocket() {
-    // We hold the single instance lock, so any existing socket is stale
-    if (process.platform !== "win32") rmSync(SOCKET_PATH, { force: true });
+    // We hold the single instance lock, so any existing socket is stale.
+    // Without $XDG_RUNTIME_DIR it lives in /tmp, where another user's file can't be removed
+    try {
+        if (process.platform !== "win32") rmSync(SOCKET_PATH, { force: true });
+    } catch (err) {
+        console.error("Not starting the IPC socket, failed to remove the stale one:", err);
+        return;
+    }
 
     server = createServer(socket => {
         socket.on("error", () => {});

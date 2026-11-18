@@ -11,8 +11,8 @@ import { STATIC_DIR } from "shared/paths";
 
 import { IS_FLATPAK } from "./constants";
 
-// Name of our .desktop file, which portals and GNOME identify us by
-const APP_ID = process.env.FLATPAK_ID ?? "vesktop";
+// Name of our .desktop file, which portals and GNOME identify us by. scripts/channel.sh names each channel's file
+const APP_ID = process.env.FLATPAK_ID ?? process.env.VOXLAND_APP_ID ?? "voxland";
 
 let libVesktop: typeof import("libvesktop") | null = null;
 

@@ -67,9 +67,9 @@ Configure them in the app's Vesktop settings, or from Discord's Keybinds and Voi
 
 - **Windows, Linux (X11)**: Bind any keys or mouse buttons in the keybind settings
 - **macOS**: Same as above, but the app needs the Accessibility permission
-- **Linux (Wayland)**: Wayland doesn't let apps listen to global input. Enable global shortcuts in the keybind settings and assign them in your system settings. This requires a desktop that supports the GlobalShortcuts portal, like GNOME, KDE, or Hyprland
+- **Linux (Wayland)**: Wayland doesn't let apps listen to global input. Enable global shortcuts in the keybind settings and assign them in your system settings. This requires a desktop that supports the GlobalShortcuts portal, like GNOME, KDE, or Hyprland. On Hyprland, bind a key to the `global` dispatcher with an id such as `voxland:pushToTalk` (`voxland-nightly:pushToTalk` for Nightly). `hyprctl globalshortcuts` lists the ids
 
-You can also trigger actions from other programs, for example your compositor's keybinds:
+You can also trigger actions from other programs, for example your compositor's keybinds. A `scripts/channel.sh` install puts the binary on your PATH as `voxland`, and Nightly also needs its `--user-data-dir`:
 
 ```sh
 vesktop --run-shortcut toggleMute

@@ -1,6 +1,6 @@
 export function requestBackground(autoStart: boolean, commandLine: string[]): boolean;
 export function isStatusNotifierHostRegistered(): boolean;
-export function registerHostApp(appId: string): boolean;
+export function registerHostApp(appId: string): void;
 export function openGnomeAppSettings(appId: string): boolean;
 
 export interface XDPShortcut {

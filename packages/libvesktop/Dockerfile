@@ -4,6 +4,10 @@
 FROM debian:11
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Debian 11 left LTS, so its packages only remain on the archive, whose Release files have expired
+RUN sed -i 's|http://deb.debian.org|http://archive.debian.org|g' /etc/apt/sources.list \
+ && echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99archive
+
 RUN dpkg --add-architecture arm64
 
 RUN apt-get update && apt-get install -y \

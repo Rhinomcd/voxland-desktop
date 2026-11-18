@@ -192,46 +192,36 @@ constexpr const char *PORTAL_PATH = "/org/freedesktop/portal/desktop";
 constexpr const char *SHORTCUTS_INTERFACE = "org.freedesktop.portal.GlobalShortcuts";
 
 // Tells the portal our app id. Unsandboxed apps otherwise have an empty app id, which portals use to persist things like shortcut triggers.
-// Must happen before any other portal call on this connection.
-bool register_host_app(const std::string &app_id)
+// Must be sent before any other portal call on this connection. D-Bus delivers one connection's messages in order,
+// so it doesn't have to finish first, and doesn't block startup while the portal starts
+void register_host_app(const std::string &app_id)
 {
     GError *error = nullptr;
-
-    GObjectPtr<GDBusConnection> bus(g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error));
+    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
     if (!bus)
     {
         GErrorPtr error_ptr(error);
-        return false;
+        std::cerr << "[libvesktop::register_host_app] Failed to connect to session bus: "
+                  << (error_ptr ? error_ptr->message : "unknown error") << std::endl;
+        return;
     }
 
     GVariantBuilder options;
     g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
 
-    GVariantPtr reply(g_dbus_connection_call_sync(
-        bus.get(),
-        PORTAL_BUS_NAME,
-        PORTAL_PATH,
-        "org.freedesktop.host.portal.Registry",
-        "Register",
-        g_variant_new("(sa{sv})", app_id.c_str(), &options),
-        nullptr,
-        G_DBUS_CALL_FLAGS_NONE,
-        1000,
-        nullptr,
-        &error));
-
-    if (!reply)
-    {
-        GErrorPtr error_ptr(error);
-        std::cerr << "[libvesktop::register_host_app] Failed to register app id: "
-                  << (error_ptr ? error_ptr->message : "unknown error") << std::endl;
-        return false;
-    }
-
     // The registration belongs to this connection's unique name. The shared bus connection is only weakly cached by GLib,
-    // so keep it alive forever to not lose the registration once all other references are dropped
-    bus.release();
-    return true;
+    // so the reference taken above is never released, to not lose the registration once all other references are dropped
+    g_dbus_connection_call(
+        bus, PORTAL_BUS_NAME, PORTAL_PATH, "org.freedesktop.host.portal.Registry", "Register",
+        g_variant_new("(sa{sv})", app_id.c_str(), &options), nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr,
+        [](GObject *source, GAsyncResult *res, gpointer) {
+            GError *raw_error = nullptr;
+            GVariantPtr reply(g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), res, &raw_error));
+            GErrorPtr error(raw_error);
+            if (error)
+                std::cerr << "[libvesktop::register_host_app] Failed to register app id: " << error->message << std::endl;
+        },
+        nullptr);
 }
 
 Napi::Value RegisterHostApp(const Napi::CallbackInfo &info)
@@ -244,7 +234,8 @@ Napi::Value RegisterHostApp(const Napi::CallbackInfo &info)
         return env.Null();
     }
 
-    return Napi::Boolean::New(env, register_host_app(info[0].As<Napi::String>().Utf8Value()));
+    register_host_app(info[0].As<Napi::String>().Utf8Value());
+    return env.Undefined();
 }
 
 // Opens GNOME Settings on the page of the given app, which is where GNOME lets you change its global shortcuts
@@ -516,6 +507,11 @@ private:
                 }
 
                 session_ = g_variant_get_string(handle.get(), nullptr);
+                // The desktop environment may close the session, for example when its portal restarts
+                signals_.push_back(Subscribe("org.freedesktop.portal.Session", "Closed", session_.c_str(), [this](GVariant *) {
+                    session_.clear();
+                    Emit("fatal", {Str("Your desktop environment closed the shortcuts session")});
+                }));
                 Emit("ready");
             });
     }

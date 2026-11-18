@@ -68,7 +68,7 @@ const VencordLocationPicker: SettingsComponent = () => {
                                 break;
                             case "invalid":
                                 showToast({
-                                    text: "You did not choose a valid Voxland build. Make sure you're selecting the dist dir!",
+                                    text: "You did not choose a valid client mod build. Make sure you're selecting the dist dir!",
                                     variant: "critical"
                                 });
                                 break;

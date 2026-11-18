@@ -12,7 +12,7 @@ function Fallback() {
         <Card variant="danger">
             <Heading tag="h4">Something went wrong.</Heading>
             <Paragraph>
-                Please make sure Voxland is fully up to date. If this keeps happening,{" "}
+                Please make sure Vesktop and your client mod are fully up to date. If this keeps happening,{" "}
                 <TextButton
                     variant="link"
                     onClick={() => window.open("https://github.com/Rhinomcd/voxland-desktop/issues", "_blank")}

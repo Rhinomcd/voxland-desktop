@@ -85,12 +85,12 @@ function initMenuBar(win: BrowserWindow) {
             click: createAboutWindow
         },
         {
-            label: "Force Update Client Mod",
+            label: "Reinstall Default Client Mod",
             async click() {
                 await downloadVencordFiles();
                 relaunch();
             },
-            toolTip: "Vesktop will automatically restart after this operation"
+            toolTip: "Replaces the files in the client mod location with the default client mod, then restarts Vesktop"
         },
         {
             label: "Reset Vesktop",
@@ -500,7 +500,7 @@ async function showStartupError(error: unknown) {
     const { response } = await dialog.showMessageBox({
         type: "error",
         message: "Vesktop failed to start",
-        detail: `${error}\n\nRepair will re-download the client mod and restart Vesktop.`,
+        detail: `${error}\n\nRepair will replace the client mod files with the default client mod and restart Vesktop.`,
         buttons: ["Repair", "Quit"],
         defaultId: MessageBoxChoice.Default,
         cancelId: MessageBoxChoice.Cancel

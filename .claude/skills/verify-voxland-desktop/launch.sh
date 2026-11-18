@@ -66,8 +66,8 @@ if [[ ! -d $state/config/vesktop ]]; then
     mv "$state/config/vesktop.partial" "$state/config/vesktop"
 fi
 
-[[ -d $repo/node_modules ]] || (cd "$repo" && pnpm install --frozen-lockfile >/dev/null)
-(cd "$repo" && pnpm build:dev >/dev/null)
+[[ -d $repo/node_modules ]] || (cd "$repo" && vp install --frozen-lockfile >/dev/null)
+(cd "$repo" && vp run build:dev >/dev/null)
 cd "$repo"
 XDG_CONFIG_HOME=$state/config setsid env -u VENCORD_USER_DATA_DIR node_modules/.bin/electron --remote-debugging-port="$port" "$@" . >"$state/app.log" 2>&1 &
 echo $! >"$state/pid"

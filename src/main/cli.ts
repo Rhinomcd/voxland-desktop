@@ -46,7 +46,7 @@ const options = {
     },
     repair: {
         type: "boolean",
-        description: "Repair the application by re-downloading the latest Vencord files"
+        description: "Repair the application by re-downloading the latest client mod files"
     }
 } satisfies Record<string, Option>;
 

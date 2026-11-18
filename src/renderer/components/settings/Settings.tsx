@@ -203,6 +203,6 @@ export default ErrorBoundary.wrap(
     },
     {
         message:
-            "Failed to render the Vesktop Settings tab. If this issue persists, try to right click the Vesktop tray icon, then click 'Repair Vencord'. And make sure your Vesktop is up to date."
+            "Failed to render the Vesktop Settings tab. If this issue persists, try to right click the Vesktop tray icon, then click 'Repair Client Mod'. And make sure your Vesktop is up to date."
     }
 );

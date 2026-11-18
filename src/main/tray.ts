@@ -77,7 +77,7 @@ export async function initTray(win: BrowserWindow, setIsQuitting: (val: boolean)
             click: createAboutWindow
         },
         {
-            label: "Repair Vencord",
+            label: "Repair Client Mod",
             async click() {
                 await downloadVencordFiles();
                 relaunch();

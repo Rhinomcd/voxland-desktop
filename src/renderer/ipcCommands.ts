@@ -4,10 +4,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { NavigationRouter, SettingsRouter } from "@vencord/types/webpack/common";
+import { FluxDispatcher, NavigationRouter, SettingsRouter, UserStore } from "@vencord/types/webpack/common";
 import { IpcCommands } from "shared/IpcEvents";
 
 import { openScreenSharePicker } from "./components/ScreenSharePicker";
+import { VesktopLogger } from "./logger";
+import { createScreenShareSession } from "./screenShareSession";
 
 type IpcCommandHandler = (data: any) => any;
 
@@ -53,6 +55,19 @@ onIpcCommand(IpcCommands.NAVIGATE_SETTINGS, () => {
 
 onIpcCommand(IpcCommands.GET_LANGUAGES, () => navigator.languages);
 
-onIpcCommand(IpcCommands.SCREEN_SHARE_PICKER, data =>
-    openScreenSharePicker(data.screens, data.skipPicker, data.target)
+const screenShareSession = createScreenShareSession(
+    VesktopNative.virtmic,
+    // Discord's modules load after this file, so look the dispatcher up on each call
+    {
+        subscribe: (event, handler) => FluxDispatcher.subscribe(event, handler),
+        unsubscribe: (event, handler) => FluxDispatcher.unsubscribe(event, handler)
+    },
+    () => UserStore.getCurrentUser().id
 );
+
+onIpcCommand(IpcCommands.SCREEN_SHARE_PICKER, async data => {
+    const pick = await openScreenSharePicker(data.screens, data.skipPicker, data.target);
+    // still start the stream, just without audio
+    await screenShareSession.start(pick).catch(e => VesktopLogger.error("Failed to set up venmic", e));
+    return pick;
+});

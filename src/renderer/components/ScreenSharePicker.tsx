@@ -8,20 +8,11 @@ import "./screenSharePicker.css";
 import { classNameFactory } from "@vencord/types/api/Styles";
 import { Button, Card, CogWheel, FormSwitch, Heading, Margins, Paragraph, Span } from "@vencord/types/components";
 import { classes, Logger, useAwaiter } from "@vencord/types/utils";
-import { onceReady } from "@vencord/types/webpack";
-import {
-    closeModal,
-    FluxDispatcher,
-    Modal,
-    openModal,
-    Select,
-    UserStore,
-    useEffect,
-    useState
-} from "@vencord/types/webpack/common";
+import { closeModal, Modal, openModal, Select, useEffect, useState } from "@vencord/types/webpack/common";
 import type { Dispatch, SetStateAction } from "react";
 import { State, useSettings, useVesktopState } from "renderer/settings";
 import { isLinux, isWindows } from "renderer/utils";
+import type { StreamPick } from "shared/screenShare";
 import type { AudioApp, AudioAppList, AudioRequest, CaptureTarget } from "shared/screenShareAudio";
 
 import { SimpleErrorBoundary } from "./SimpleErrorBoundary";
@@ -41,15 +32,7 @@ type AudioChoice =
     | { kind: "system"; exclude: AudioApp[] }
     | { kind: "apps"; apps: AudioApp[] };
 
-interface StreamSettings {
-    audio: boolean;
-    contentHint?: string;
-    audioRequest?: AudioRequest;
-}
-
-export interface StreamPick extends StreamSettings {
-    id: string;
-}
+type StreamSettings = Omit<StreamPick, "id">;
 
 interface Source {
     id: string;
@@ -58,30 +41,6 @@ interface Source {
 }
 
 export let currentSettings: StreamSettings | null = null;
-
-if (isLinux) {
-    onceReady.then(() => {
-        const ownsStream = (streamKey: string) => {
-            return streamKey.split(":").at(-1) === UserStore.getCurrentUser().id;
-        };
-
-        FluxDispatcher.subscribe("STREAM_CLOSE", ({ streamKey }: { streamKey: string }) => {
-            if (!ownsStream(streamKey)) {
-                return;
-            }
-
-            VesktopNative.virtmic.stop();
-        });
-
-        FluxDispatcher.subscribe("STREAM_UPDATE", ({ streamKey }: { streamKey: string }) => {
-            if (!ownsStream(streamKey)) {
-                return;
-            }
-
-            VesktopNative.virtmic.unmute();
-        });
-    });
-}
 
 export function openScreenSharePicker(screens: Source[], skipPicker: boolean, target: CaptureTarget | null = null) {
     let didSubmit = false;
@@ -92,22 +51,8 @@ export function openScreenSharePicker(screens: Source[], skipPicker: boolean, ta
                     screens={screens}
                     target={target}
                     modalProps={props}
-                    submit={async v => {
+                    submit={v => {
                         didSubmit = true;
-
-                        if (isLinux && v.audioRequest) {
-                            try {
-                                if (v.audioRequest.kind === "none") {
-                                    await VesktopNative.virtmic.stop();
-                                } else {
-                                    await VesktopNative.virtmic.start(v.audioRequest);
-                                }
-                            } catch (e) {
-                                // still start the stream, just without audio
-                                new Logger("VesktopScreenShare").error("Failed to set up venmic", e);
-                            }
-                        }
-
                         resolve(v);
                     }}
                     close={() => {

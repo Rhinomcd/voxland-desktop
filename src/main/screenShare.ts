@@ -7,8 +7,8 @@
 import { release } from "os";
 
 import { desktopCapturer, session, Streams } from "electron";
-import type { StreamPick } from "renderer/components/ScreenSharePicker";
 import { IpcCommands, IpcEvents } from "shared/IpcEvents";
+import type { StreamPick } from "shared/screenShare";
 
 import { readCaptureTarget } from "./captureTarget";
 import { sendRendererCommand } from "./ipcCommands";

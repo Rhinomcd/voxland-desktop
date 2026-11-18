@@ -51,8 +51,8 @@ replace_dir() {
 }
 
 write_desktop_entry() {
-    local exec_line="$install_dir/vesktop" arg
-    for arg in "${launch_args[@]}"; do exec_line+=" $arg"; done
+    local exec_line="\"$install_dir/vesktop\"" arg
+    for arg in "${launch_args[@]}"; do exec_line+=" \"$arg\""; done
     mkdir -p "$data/applications"
     cat >"$data/applications/$(basename "$install_dir").desktop" <<EOF
 [Desktop Entry]

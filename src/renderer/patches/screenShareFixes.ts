@@ -6,7 +6,7 @@
 
 import { Logger } from "@vencord/types/utils";
 import { FluxDispatcher } from "@vencord/types/webpack/common";
-import { currentSettings } from "renderer/components/ScreenSharePicker";
+import { screenShareSession } from "renderer/ipcCommands";
 import { State } from "renderer/settings";
 import { isLinux } from "renderer/utils";
 
@@ -176,7 +176,8 @@ navigator.mediaDevices.getDisplayMedia = async function (opts) {
     const { resolution, frameRate } = getStreamQuality();
     const track = stream.getVideoTracks()[0];
 
-    if (currentSettings?.contentHint) track.contentHint = currentSettings.contentHint;
+    const contentHint = screenShareSession.contentHint();
+    if (contentHint) track.contentHint = contentHint;
 
     try {
         await track.applyConstraints(getTrackConstraints(resolution, frameRate));

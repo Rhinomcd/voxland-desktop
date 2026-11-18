@@ -61,13 +61,22 @@ describe("createPressTracker", () => {
         ]);
     });
 
-    it("releases everything one source holds", () => {
+    it("ignores a release of another action whose press it never saw", () => {
+        const { send, presses } = setup();
+        presses.set("toggleMute", false, "bind");
+        expect(send.mock.calls).toEqual([]);
+    });
+
+    it("releases the hold actions a source holds, once, without firing its toggles", () => {
         const { send, presses } = setup();
         presses.set("pushToTalk", true, "portal");
+        presses.set("toggleMute", true, "portal");
         presses.releaseSource("portal");
         presses.releaseSource("portal");
+        presses.set("toggleMute", false, "portal");
         expect(send.mock.calls).toEqual([
             ["pushToTalk", true],
+            ["toggleMute", true],
             ["pushToTalk", false]
         ]);
     });

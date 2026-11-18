@@ -7,10 +7,14 @@
 import type { ShortcutAction } from "shared/utils/keybind";
 
 /**
- * Merges presses of the same action from several sources (binds, the portal, the socket) into one press,
- * so releasing one source doesn't release an action another source still holds
+ * Merges presses of the same hold action from several sources (binds, the portal, the socket) into one press,
+ * so releasing one source doesn't release an action another source still holds.
+ * Other actions fire once per press, so each source's presses pass through
  */
-export function createPressTracker(send: (action: ShortcutAction, pressed: boolean) => void) {
+export function createPressTracker(
+    send: (action: ShortcutAction, pressed: boolean) => void,
+    isHoldAction: (action: ShortcutAction) => boolean
+) {
     const holders = new Map<ShortcutAction, Set<unknown>>();
 
     function press(action: ShortcutAction, source: unknown) {
@@ -32,7 +36,8 @@ export function createPressTracker(send: (action: ShortcutAction, pressed: boole
 
     return {
         set(action: ShortcutAction, pressed: boolean, source: unknown) {
-            if (pressed) press(action, source);
+            if (!isHoldAction(action)) send(action, pressed);
+            else if (pressed) press(action, source);
             else release(action, source);
         },
         releaseSource(source: unknown) {

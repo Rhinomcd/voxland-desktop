@@ -15,6 +15,9 @@ export interface AppIdHost {
     readFile(path: string): string | null;
 }
 
+const desktopEntryGroup = (content: string) =>
+    /^\[Desktop Entry\]$([\s\S]*?)(?=^\[|(?![\s\S]))/m.exec(content)?.[1] ?? "";
+
 // Portals look the id up like GLib does: the first <id>.desktop on the data dirs wins, and Hidden=true deletes it
 export function hasDesktopFile({ env, readFile }: AppIdHost, id: string) {
     const dataHome = env.XDG_DATA_HOME || join(env.HOME ?? "", ".local/share");
@@ -22,7 +25,7 @@ export function hasDesktopFile({ env, readFile }: AppIdHost, id: string) {
 
     for (const dir of [dataHome, ...dataDirs]) {
         const content = readFile(join(dir, "applications", `${id}.desktop`));
-        if (content !== null) return !/^Hidden\s*=\s*true\s*$/m.test(content);
+        if (content !== null) return !/^Hidden\s*=\s*true\s*$/m.test(desktopEntryGroup(content));
     }
     return false;
 }

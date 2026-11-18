@@ -5,7 +5,7 @@
  */
 
 import { IpcCommands } from "shared/IpcEvents";
-import { KeybindStatus, ShortcutAction } from "shared/utils/keybind";
+import { HOLD_ACTIONS, KeybindStatus, ShortcutAction } from "shared/utils/keybind";
 
 import { IS_WAYLAND } from "../constants";
 import { AppEvents } from "../events";
@@ -26,18 +26,19 @@ export function setStatus(newStatus: Omit<KeybindStatus, "backend">) {
         );
 }
 
-// Events before Discord is loaded are dropped rather than queued, as they would all fire at once later
-const presses = createPressTracker((action, pressed) => {
-    if (!appLoaded) return;
+const presses = createPressTracker(
+    (action, pressed) =>
+        sendRendererCommand(IpcCommands.KEYBINDS_TRIGGER, { action, pressed }).catch(err =>
+            console.error("Failed to trigger keybind action:", action, err)
+        ),
+    action => HOLD_ACTIONS.has(action)
+);
 
-    sendRendererCommand(IpcCommands.KEYBINDS_TRIGGER, { action, pressed }).catch(err =>
-        console.error("Failed to trigger keybind action:", action, err)
-    );
-});
-
-/** Presses or releases an action on behalf of source. The action stays pressed while any source holds it */
-export const triggerAction = (action: ShortcutAction, pressed: boolean, source: unknown) =>
-    presses.set(action, pressed, source);
+/** Presses or releases an action on behalf of source. Hold actions stay pressed while any source holds them */
+export function triggerAction(action: ShortcutAction, pressed: boolean, source: unknown) {
+    // Events before Discord is loaded are dropped rather than queued, as they would all fire at once later
+    if (appLoaded) presses.set(action, pressed, source);
+}
 
 export const { releaseSource } = presses;
 

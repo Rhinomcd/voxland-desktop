@@ -8,12 +8,6 @@
  * A global keybind. Keys are KeyboardEvent.code names, except that left and right modifiers
  * are merged into "Control", "Shift", "Alt" and "Meta", and mouse buttons are "Mouse3" to "Mouse5"
  */
-/** How other programs reach this instance: the command that runs it, and its socket */
-export interface ExternalTriggers {
-    command: string;
-    socketPath: string;
-}
-
 export interface KeyBind {
     id: string;
     action: ShortcutAction | "unassigned";
@@ -21,6 +15,12 @@ export interface KeyBind {
     // What layout dependent keys typed when recorded on Windows, where we can't look that up later
     labels?: Record<string, string>;
     enabled: boolean;
+}
+
+/** How other programs reach this instance: the command that runs it, and its socket */
+export interface ExternalTriggers {
+    command: string;
+    socketPath: string;
 }
 
 // Discord's global keybind action for each of our actions
@@ -57,6 +57,14 @@ export const ACTION_DESCRIPTIONS: Record<ShortcutAction, string> = {
 };
 
 export const SHORTCUT_ACTIONS = Object.keys(ACTION_MAP) as ShortcutAction[];
+
+/** Actions that are active while held. The others fire once per press */
+export const HOLD_ACTIONS: ReadonlySet<ShortcutAction> = new Set([
+    "pushToTalk",
+    "pushToTalkPriority",
+    "pushToMute",
+    "vadPriority"
+]);
 
 export function isShortcutAction(action: string): action is ShortcutAction {
     return Object.hasOwn(ACTION_MAP, action);

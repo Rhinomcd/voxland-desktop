@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
 import { app } from "electron";
@@ -24,17 +24,20 @@ const readFile = (path: string) => {
 
 const APP_ID = pickAppId({ env: process.env, packaged: app.isPackaged, execPath: process.execPath, readFile });
 
-// Portals only accept ids with a desktop file, so dev runs get a hidden one of their own instead of sharing stable's
+// Portals only accept ids with a desktop file, so dev runs get a hidden one of their own instead of sharing stable's.
+// GLib rejects entries whose Exec is gone, so rewrite it when the Electron binary moves
 function ensureDevDesktopFile() {
     const dir = join(process.env.XDG_DATA_HOME || join(app.getPath("home"), ".local/share"), "applications");
     const file = join(dir, `${DEV_APP_ID}.desktop`);
-    if (existsSync(file)) return;
+    const content = `[Desktop Entry]\nType=Application\nName=Voxland Dev\nExec=${process.execPath}\nNoDisplay=true\n`;
+    if (readFile(file) === content) return;
 
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-        file,
-        `[Desktop Entry]\nType=Application\nName=Voxland Dev\nExec=${process.execPath}\nNoDisplay=true\n`
-    );
+    try {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(file, content);
+    } catch (e) {
+        console.error("Failed to write the dev desktop file, the portal will reject our app id:", e);
+    }
 }
 
 let libVesktop: typeof import("libvesktop") | null = null;

@@ -38,6 +38,13 @@ describe("pickAppId", () => {
         expect(pickAppId(h)).toBeNull();
     });
 
+    it("only reads Hidden from the [Desktop Entry] group", () => {
+        const h = host("/x/voxland/vesktop", {
+            "/home/u/.local/share/applications/voxland.desktop": ENTRY + "\n[Desktop Action new]\nHidden=true\n"
+        });
+        expect(pickAppId(h)).toBe("voxland");
+    });
+
     it("honours XDG_DATA_HOME and XDG_DATA_DIRS", () => {
         const h = host(
             "/x/voxland/vesktop",

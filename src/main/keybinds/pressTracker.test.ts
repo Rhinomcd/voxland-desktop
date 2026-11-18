@@ -10,7 +10,7 @@ import { createPressTracker } from "./pressTracker";
 
 const setup = () => {
     const send = vi.fn();
-    return { send, presses: createPressTracker(send) };
+    return { send, presses: createPressTracker(send, action => action === "pushToTalk") };
 };
 
 describe("createPressTracker", () => {
@@ -40,22 +40,34 @@ describe("createPressTracker", () => {
 
     it("ignores repeated presses and releases it never saw pressed", () => {
         const { send, presses } = setup();
-        presses.set("toggleMute", false, "a");
-        presses.set("toggleMute", true, "a");
-        presses.set("toggleMute", true, "a");
-        presses.set("toggleMute", false, "b");
-        expect(send.mock.calls).toEqual([["toggleMute", true]]);
+        presses.set("pushToTalk", false, "a");
+        presses.set("pushToTalk", true, "a");
+        presses.set("pushToTalk", true, "a");
+        presses.set("pushToTalk", false, "b");
+        expect(send.mock.calls).toEqual([["pushToTalk", true]]);
+    });
+
+    it("passes presses of other actions through, so overlapping toggles each fire", () => {
+        const { send, presses } = setup();
+        presses.set("toggleMute", true, "bind");
+        presses.set("toggleMute", true, "tap");
+        presses.set("toggleMute", false, "tap");
+        presses.set("toggleMute", false, "bind");
+        expect(send.mock.calls).toEqual([
+            ["toggleMute", true],
+            ["toggleMute", true],
+            ["toggleMute", false],
+            ["toggleMute", false]
+        ]);
     });
 
     it("releases everything one source holds", () => {
         const { send, presses } = setup();
         presses.set("pushToTalk", true, "portal");
-        presses.set("toggleMute", true, "portal");
-        presses.set("toggleMute", true, "bind");
+        presses.releaseSource("portal");
         presses.releaseSource("portal");
         expect(send.mock.calls).toEqual([
             ["pushToTalk", true],
-            ["toggleMute", true],
             ["pushToTalk", false]
         ]);
     });

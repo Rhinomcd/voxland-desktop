@@ -2,6 +2,8 @@
 
 Voxland is a Discord client mod and Linux desktop app, forked from [Vencord](https://github.com/Vendicated/Vencord) and [Vesktop](https://github.com/Vencord/Vesktop). It welcomes contributions written with AI.
 
+This repo is the desktop app: an Electron shell around Discord, built for Linux and Wayland. The client mod lives in [Rhinomcd/voxland](https://github.com/Rhinomcd/voxland).
+
 ## Why this exists
 
 Discord on Linux still has rough edges, especially around streaming and screen sharing. Looking for alternatives led me to Vencord, its desktop app Vesktop, and Equicord, a fork of Vencord.
@@ -36,6 +38,10 @@ These apply to every PR, whether a person, an agent, or both wrote it.
 
 When you share a window, Voxland sends that app's audio, like Discord on Windows does. When you share a whole screen, it sends all system audio except Discord's own. "Change" in the picker overrides either choice.
 
+| Sharing a window sends its app's audio                                                                  | "Change" picks another source                                                                     |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| ![Screen share picker with the shared window's audio selected](docs/screenshots/share-window-audio.png) | ![Screen share picker with the audio source list open](docs/screenshots/share-audio-override.png) |
+
 The portal never tells the app which window you picked. To let Voxland see the choice, pipe your xdg-desktop-portal-hyprland picker through [`scripts/linux/voxland-record-share-pick`](scripts/linux/voxland-record-share-pick). Save this as an executable `~/.local/bin/my-share-picker`:
 
 ```sh
@@ -55,68 +61,34 @@ Voxland uses `pw-dump` (in `pipewire` on Arch, `pipewire-utils` on Fedora, `pipe
 
 Without the hook, Voxland cannot tell what you shared, so the stream starts without audio and the picker asks you to choose it.
 
----
-
-# Vesktop
-
-Vesktop is a custom Discord desktop app
-
-**Main features**:
-
-- Vencord preinstalled
-- Much more lightweight and faster than the official Discord app
-- Linux Screenshare with sound & wayland
-- Much better privacy, since Discord has no access to your system
-
-**Not yet supported**:
-
-- Global Keybinds
-- see the [Roadmap](https://github.com/Vencord/Vesktop/issues/324)
-
-![](https://github.com/Vencord/Vesktop/assets/45497981/8608a899-96a9-4027-9725-2cb02ba189fd)
-![](https://github.com/Vencord/Vesktop/assets/45497981/8701e5de-52c4-4346-a990-719cb971642e)
-
 ## Installing
 
-Visit https://vesktop.dev/install
+There are no packaged releases yet. Build from source.
 
-## Building from Source
+## Building from source
 
-You need to have the following dependencies installed:
-
-- [Git](https://git-scm.com/downloads)
-- [Vite+](https://viteplus.dev/guide/) (`vp`), which also manages Node.js and the package manager
-
-Packaging will create builds in the dist/ folder
+You need [Git](https://git-scm.com/downloads) and [Vite+](https://viteplus.dev/guide/) (`vp`), which also manages Node.js and the package manager.
 
 ```sh
-git clone https://github.com/Vencord/Vesktop
-cd Vesktop
-
-# Install Dependencies
+git clone https://github.com/Rhinomcd/voxland-desktop
+cd voxland-desktop
 vp install
 
-# Either run it without packaging
-vp run start
-
-# Or package (will build packages for your OS)
-vp run package
-
-# Or only build the Linux Pacman package
-vp run package --linux pacman
-
-# Or package to a directory only
-vp run package:dir
+vp run start                     # build and run without packaging
+vp run package                   # build packages for your OS into dist/
+vp run package --linux pacman    # only the Linux pacman package
+vp run package:dir               # unpacked app directory only
 ```
 
-## Building LibVesktop from Source
+## Running the Voxland mod
 
-This is a small C++ helper library Vesktop uses on Linux to emit D-Bus events. By default, prebuilt binaries for x64 and arm64 are used.
+On first launch the app downloads the upstream Vencord build. To run the Voxland mod instead, build [Rhinomcd/voxland](https://github.com/Rhinomcd/voxland) and point Settings → Developer Options → Open Developer Settings → Vencord Location at its `dist` folder.
 
-If you want to build it from source:
+## Building libvesktop
 
-1. Install build dependencies:
+libvesktop is a small C++ helper the app uses on Linux to emit D-Bus events. Prebuilt binaries for x64 and arm64 ship with the repo. To build your own:
+
+1. Install the build dependencies:
     - Debian/Ubuntu: `apt install build-essential python3 curl pkg-config libglib2.0-dev`
     - Fedora: `dnf install @c-development @development-tools python3 curl pkgconf-pkg-config glib2-devel`
-2. Run `vp run buildLibVesktop`
-3. From now on, building Vesktop will use your own build
+2. Run `vp run buildLibVesktop`. Later builds of the app use your copy.

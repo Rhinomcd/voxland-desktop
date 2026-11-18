@@ -19,13 +19,12 @@ select_channel() {
         stable)
             branch=main name=Voxland install_dir=$HOME/.local/opt/voxland
             profile=${XDG_CONFIG_HOME:-$HOME/.config}/vesktop
-            launch_args=() desktop_extra="MimeType=x-scheme-handler/discord;" exec_env=""
+            launch_args=() desktop_extra="MimeType=x-scheme-handler/discord;"
             ;;
         nightly)
             branch=dev name="Voxland Nightly" install_dir=$HOME/.local/opt/voxland-nightly
             profile=$root/profile
             launch_args=("--user-data-dir=$profile") desktop_extra=""
-            exec_env="env VOXLAND_APP_ID=voxland-nightly "
             ;;
         *) usage ;;
     esac
@@ -52,7 +51,7 @@ replace_dir() {
 }
 
 write_desktop_entry() {
-    local exec_line="$exec_env\"$install_dir/vesktop\"" arg
+    local exec_line="\"$install_dir/vesktop\"" arg
     for arg in "${launch_args[@]}"; do exec_line+=" \"$arg\""; done
     mkdir -p "$data/applications"
     cat >"$data/applications/$(basename "$install_dir").desktop" <<EOF

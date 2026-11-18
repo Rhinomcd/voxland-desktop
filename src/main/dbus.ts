@@ -4,15 +4,17 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { join } from "path";
+import { basename, dirname, join } from "path";
 
+import { app } from "electron";
 import type { XDPGlobalShortcutsEvent } from "libvesktop";
 import { STATIC_DIR } from "shared/paths";
 
 import { IS_FLATPAK } from "./constants";
 
-// Name of our .desktop file, which portals and GNOME identify us by. scripts/channel.sh names each channel's file
-const APP_ID = process.env.FLATPAK_ID ?? process.env.VOXLAND_APP_ID ?? "voxland";
+// Name of our .desktop file, which portals and GNOME identify us by.
+// scripts/channel.sh names each channel's file after its install dir, e.g. voxland-nightly
+const APP_ID = process.env.FLATPAK_ID ?? (app.isPackaged ? basename(dirname(process.execPath)) : "voxland");
 
 let libVesktop: typeof import("libvesktop") | null = null;
 

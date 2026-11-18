@@ -12,7 +12,7 @@ const logger = new Logger("VesktopKeybinds");
 
 interface KeybindAction {
     // keybind is the keybind from Discord's KeybindStore that triggered the action
-    onTrigger(pressed: boolean, keybind: { action: string; shortcut: unknown[]; params: object }): void;
+    onTrigger(pressed: boolean, keybind: { id: string; action: string; shortcut: unknown[]; params: object }): void;
     keyEvents: { keydown: boolean; keyup: boolean };
 }
 
@@ -37,7 +37,8 @@ export function handleKeybind(action: ShortcutAction, pressed: boolean) {
         return;
     }
 
-    // Discord decides which key events an action uses. Push to talk uses both, toggles only key up
+    // Discord decides which key events an action uses. Push to talk uses both, toggles only key up.
+    // Push to talk counts held keybinds by id, so each action needs a distinct one
     if (pressed ? keybind.keyEvents.keydown : keybind.keyEvents.keyup)
-        keybind.onTrigger(pressed, { action: discordAction, shortcut: [], params: {} });
+        keybind.onTrigger(pressed, { id: `vesktop-${action}`, action: discordAction, shortcut: [], params: {} });
 }

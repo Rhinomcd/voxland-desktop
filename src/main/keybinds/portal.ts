@@ -5,12 +5,13 @@
  */
 
 import type { XDPGlobalShortcuts, XDPGlobalShortcutsEvent } from "libvesktop";
-import { ACTION_DESCRIPTIONS, isShortcutAction, SHORTCUT_ACTIONS } from "shared/utils/keybind";
+import { ACTION_DESCRIPTIONS, isShortcutAction, SHORTCUT_ACTIONS, ShortcutAction } from "shared/utils/keybind";
 
 import { createXDPGlobalShortcuts, openGnomeAppSettings } from "../dbus";
 import { setStatus, status, triggerAction } from "./actions";
 
 let session: XDPGlobalShortcuts | null = null;
+const heldActions = new Set<ShortcutAction>();
 
 function onEvent(...event: XDPGlobalShortcutsEvent) {
     switch (event[0]) {
@@ -34,7 +35,10 @@ function onEvent(...event: XDPGlobalShortcutsEvent) {
             break;
         }
         case "shortcut":
-            if (isShortcutAction(event[1])) triggerAction(event[1], event[2]);
+            if (!isShortcutAction(event[1])) break;
+            if (event[2]) heldActions.add(event[1]);
+            else heldActions.delete(event[1]);
+            triggerAction(event[1], event[2]);
             break;
         case "error":
             console.error("GlobalShortcuts portal error:", event[1]);
@@ -51,6 +55,9 @@ function onEvent(...event: XDPGlobalShortcutsEvent) {
 export function stopPortal() {
     session?.destroy();
     session = null;
+    // The destroyed session never sends the release, so push to talk would stay held
+    for (const action of heldActions) triggerAction(action, false);
+    heldActions.clear();
 }
 
 export function setPortalEnabled(enabled: boolean) {

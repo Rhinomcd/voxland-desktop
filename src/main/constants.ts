@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { createHash } from "crypto";
 import { existsSync, mkdirSync, rmSync } from "fs";
 import { tmpdir, userInfo } from "os";
 import { dirname, join } from "path";
@@ -76,16 +77,20 @@ export const IS_FLATPAK = process.env.FLATPAK_ID !== undefined;
 export const IS_WAYLAND =
     process.platform === "linux" && (process.env.XDG_SESSION_TYPE === "wayland" || !!process.env.WAYLAND_DISPLAY);
 
+// The single instance lock is per user data dir, so each extra profile needs its own socket
+const PROFILE_SUFFIX = app.commandLine.hasSwitch("user-data-dir")
+    ? "-" + createHash("sha256").update(app.getPath("userData")).digest("hex").slice(0, 8)
+    : "";
+
 function getSocketPath() {
-    if (process.platform === "win32") return `\\\\.\\pipe\\vesktop-${userInfo().username}`;
+    if (process.platform === "win32") return `\\\\.\\pipe\\vesktop-${userInfo().username}${PROFILE_SUFFIX}`;
 
     const { XDG_RUNTIME_DIR, FLATPAK_ID } = process.env;
-    if (!XDG_RUNTIME_DIR) return join(tmpdir(), `vesktop-${userInfo().uid}.sock`);
+    if (!XDG_RUNTIME_DIR) return join(tmpdir(), `vesktop-${userInfo().uid}${PROFILE_SUFFIX}.sock`);
 
+    const name = `vesktop${PROFILE_SUFFIX}.sock`;
     // Only $XDG_RUNTIME_DIR/app/$FLATPAK_ID is shared with the host
-    return FLATPAK_ID
-        ? join(XDG_RUNTIME_DIR, "app", FLATPAK_ID, "vesktop.sock")
-        : join(XDG_RUNTIME_DIR, "vesktop.sock");
+    return FLATPAK_ID ? join(XDG_RUNTIME_DIR, "app", FLATPAK_ID, name) : join(XDG_RUNTIME_DIR, name);
 }
 
 export const SOCKET_PATH = getSocketPath();

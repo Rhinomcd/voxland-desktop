@@ -78,7 +78,7 @@ vesktop --run-shortcut pushToTalk:down
 vesktop --run-shortcut pushToTalk:up
 ```
 
-For lower latency, send the same commands as lines to the socket at `$XDG_RUNTIME_DIR/vesktop.sock`:
+For lower latency, send the same commands as lines to the socket at `$XDG_RUNTIME_DIR/vesktop.sock`. A profile started with `--user-data-dir`, such as Voxland Nightly, gets its own `vesktop-<hash>.sock`, shown in the keybind settings:
 
 ```sh
 echo "run-shortcut pushToTalk:down" | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/vesktop.sock

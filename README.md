@@ -61,6 +61,31 @@ Voxland uses `pw-dump` (in `pipewire` on Arch, `pipewire-utils` on Fedora, `pipe
 
 Without the hook, Voxland cannot tell what you shared, so the stream starts without audio and the picker asks you to choose it.
 
+## Global keybinds
+
+Configure them in the app's Vesktop settings, or from Discord's Keybinds and Voice & Video settings.
+
+- **Windows, Linux (X11)**: Bind any keys or mouse buttons in the keybind settings
+- **macOS**: Same as above, but the app needs the Accessibility permission
+- **Linux (Wayland)**: Wayland doesn't let apps listen to global input. Enable global shortcuts in the keybind settings and assign them in your system settings. This requires a desktop that supports the GlobalShortcuts portal, like GNOME, KDE, or Hyprland. On Hyprland, bind a key to the `global` dispatcher with an id such as `voxland:pushToTalk` (`voxland-nightly:pushToTalk` for Nightly). `hyprctl globalshortcuts` lists the ids
+
+You can also trigger actions from other programs, for example your compositor's keybinds. With a `scripts/channel.sh` install, run `~/.local/opt/voxland/vesktop` (or `voxland-nightly`, plus its `--user-data-dir`) in place of `vesktop`:
+
+```sh
+vesktop --run-shortcut toggleMute
+# Append :down or :up to only press or release, e.g. for push to talk
+vesktop --run-shortcut pushToTalk:down
+vesktop --run-shortcut pushToTalk:up
+```
+
+For lower latency, send the same commands as lines to the socket at `$XDG_RUNTIME_DIR/vesktop.sock`. A profile started with `--user-data-dir`, such as Voxland Nightly, gets its own `vesktop-<hash>.sock`, shown in the keybind settings:
+
+```sh
+echo "run-shortcut pushToTalk:down" | socat - UNIX-CONNECT:$XDG_RUNTIME_DIR/vesktop.sock
+```
+
+Run `vesktop --help` to see all actions.
+
 ## Installing
 
 There are no packaged releases yet. Build from source.

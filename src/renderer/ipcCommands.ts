@@ -8,6 +8,7 @@ import { FluxDispatcher, NavigationRouter, SettingsRouter, UserStore } from "@ve
 import { IpcCommands } from "shared/IpcEvents";
 
 import { openScreenSharePicker } from "./components/ScreenSharePicker";
+import { handleKeybind } from "./globalShortcuts/keybindHandler";
 import { VesktopLogger } from "./logger";
 import { createScreenShareSession } from "./screenShareSession";
 
@@ -71,3 +72,5 @@ onIpcCommand(IpcCommands.SCREEN_SHARE_PICKER, async data => {
     await screenShareSession.start(pick).catch(e => VesktopLogger.error("Failed to set up venmic", e));
     return pick;
 });
+
+onIpcCommand(IpcCommands.KEYBINDS_TRIGGER, ({ action, pressed }) => handleKeybind(action, pressed));

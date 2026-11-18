@@ -27,7 +27,8 @@
         "generateMeta": "vpx scripts/utils/generateMeta.mts"
     },
     "dependencies": {
-        "electron-updater": "6.6.2"
+        "electron-updater": "6.6.2",
+        "uiohook-napi": "^1.5.5"
     },
     "optionalDependencies": {
         "@vencord/venmic": "^7.2.5"
@@ -38,7 +39,7 @@
         "@types/react": "19.2.9",
         "@vencord/types": "1.15.14",
         "discord-rpc": "workspace:*",
-        "electron": "45.2.3",
+        "electron": "45.3.3",
         "electron-builder": "^26.18.0",
         "esbuild": "^0.28.2",
         "eslint-plugin-simple-header": "^1.2.2",
@@ -50,7 +51,7 @@
         "xml-formatter": "^3.6.7",
         "vite-plus": "catalog:"
     },
-    "packageManager": "pnpm@12.16.1",
+    "packageManager": "pnpm@12.21.0",
     "engines": {
         "node": "^22.18.0 || ^24.11.0 || >=26.0.0",
         "pnpm": ">=11"
@@ -74,6 +75,7 @@
             ]
         },
         "beforePack": "scripts/build/beforePack.mjs",
+        "npmRebuild": false,
         "toolsets": {
             "appimage": "1.0.3"
         },

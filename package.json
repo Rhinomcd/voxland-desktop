@@ -21,7 +21,7 @@
         "start": "vp run build && electron --enable-source-maps .",
         "start:dev": "vp run build:dev && electron --enable-source-maps .",
         "start:watch": "vp run build:dev && vpx scripts/startWatch.mts",
-        "test": "vp run lint && vp run fmt:check && vp run testTypes",
+        "test": "vp run lint && vp run fmt:check && vp run testTypes && vp test",
         "testTypes": "tsc --noEmit",
         "watch": "vp run build --watch",
         "generateMeta": "vpx scripts/utils/generateMeta.mts"

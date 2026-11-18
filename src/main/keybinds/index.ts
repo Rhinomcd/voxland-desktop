@@ -6,6 +6,7 @@
 
 import { app, systemPreferences } from "electron";
 import { IpcEvents } from "shared/IpcEvents";
+import type { ExternalTriggers } from "shared/utils/keybind";
 
 import { IS_WAYLAND, SOCKET_PATH } from "../constants";
 import { Settings } from "../settings";
@@ -36,7 +37,22 @@ export function initKeybinds() {
 }
 
 handle(IpcEvents.KEYBINDS_GET_STATUS, () => status);
-handleSync(IpcEvents.KEYBINDS_GET_SOCKET_PATH, () => SOCKET_PATH);
+const shellQuote = (arg: string) => (/^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`);
+
+// The command that reaches this instance, so a second launch with --run-shortcut finds its single instance lock
+function getRunCommand() {
+    // inside an AppImage, argv[0] is a temporary mount
+    const exe = (app.isPackaged && process.env.APPIMAGE) || process.execPath;
+    const args = app.isPackaged ? [] : [app.getAppPath()];
+    if (app.commandLine.hasSwitch("user-data-dir")) args.push(`--user-data-dir=${app.getPath("userData")}`);
+
+    return [exe, ...args].map(shellQuote).join(" ");
+}
+
+handleSync(IpcEvents.KEYBINDS_GET_EXTERNAL_TRIGGERS, (): ExternalTriggers => ({
+    command: getRunCommand(),
+    socketPath: SOCKET_PATH
+}));
 handle(IpcEvents.KEYBINDS_RETRY, update);
 handle(IpcEvents.KEYBINDS_REQUEST_PERMISSION, () => {
     if (process.platform === "darwin") systemPreferences.isTrustedAccessibilityClient(true);

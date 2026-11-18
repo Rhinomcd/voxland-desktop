@@ -8,6 +8,12 @@
  * A global keybind. Keys are KeyboardEvent.code names, except that left and right modifiers
  * are merged into "Control", "Shift", "Alt" and "Meta", and mouse buttons are "Mouse3" to "Mouse5"
  */
+/** How other programs reach this instance: the command that runs it, and its socket */
+export interface ExternalTriggers {
+    command: string;
+    socketPath: string;
+}
+
 export interface KeyBind {
     id: string;
     action: ShortcutAction | "unassigned";

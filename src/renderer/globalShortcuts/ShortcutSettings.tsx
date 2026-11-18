@@ -100,7 +100,7 @@ function KeybindRow({
     onDelete
 }: {
     keybind: KeyBind;
-    onChange(keybind: KeyBind): void;
+    onChange(changes: Partial<KeyBind>): void;
     onDelete(): void;
 }) {
     return (
@@ -108,14 +108,14 @@ function KeybindRow({
             <Select
                 options={ACTION_OPTIONS}
                 isSelected={v => v === keybind.action}
-                select={action => onChange({ ...keybind, action })}
+                select={action => onChange({ action })}
                 serialize={identity}
             />
-            <KeybindRecorder keybind={keybind} onChange={recorded => onChange({ ...keybind, ...recorded })} />
+            <KeybindRecorder keybind={keybind} onChange={onChange} />
             <Button size="iconOnly" variant="secondary" aria-label="Delete Keybind" onClick={onDelete}>
                 <DeleteIcon />
             </Button>
-            <Switch checked={keybind.enabled} onChange={enabled => onChange({ ...keybind, enabled })} />
+            <Switch checked={keybind.enabled} onChange={enabled => onChange({ enabled })} />
         </div>
     );
 }
@@ -124,7 +124,9 @@ function HookKeybinds({ status }: { status: KeybindStatus }) {
     const settings = useSettings();
     const keybinds = settings.keyBinds ?? [];
 
-    const setKeybinds = (newKeybinds: KeyBind[]) => (settings.keyBinds = newKeybinds);
+    // Recording finishes asynchronously, so apply changes to the keybinds as they are then, not as they were rendered
+    const setKeybinds = (update: (current: KeyBind[]) => KeyBind[]) =>
+        (settings.keyBinds = update(settings.keyBinds ?? []));
 
     return (
         <>
@@ -140,19 +142,21 @@ function HookKeybinds({ status }: { status: KeybindStatus }) {
             )}
             {status.error && <ErrorCard onRetry={() => VesktopNative.keybinds.retry()}>{status.error}</ErrorCard>}
 
-            {keybinds.map((keybind, i) => (
+            {keybinds.map(keybind => (
                 <KeybindRow
                     key={keybind.id}
                     keybind={keybind}
-                    onChange={newKeybind => setKeybinds(keybinds.with(i, newKeybind))}
-                    onDelete={() => setKeybinds(keybinds.toSpliced(i, 1))}
+                    onChange={changes =>
+                        setKeybinds(current => current.map(k => (k.id === keybind.id ? { ...k, ...changes } : k)))
+                    }
+                    onDelete={() => setKeybinds(current => current.filter(k => k.id !== keybind.id))}
                 />
             ))}
 
             <Button
                 onClick={() =>
-                    setKeybinds([
-                        ...keybinds,
+                    setKeybinds(current => [
+                        ...current,
                         { id: crypto.randomUUID(), action: "unassigned", keys: [], enabled: true }
                     ])
                 }
@@ -255,7 +259,7 @@ function Cell({ children }: { children: React.ReactNode }) {
 }
 
 function ExternalTriggers() {
-    const socketPath = VesktopNative.keybinds.getSocketPath();
+    const { command, socketPath } = VesktopNative.keybinds.getExternalTriggers();
 
     return (
         <section className={cl("external")}>
@@ -270,11 +274,9 @@ function ExternalTriggers() {
                 <HeadingTertiary>Command Line</HeadingTertiary>
                 <CodeBlock
                     lang="sh"
-                    content={[
-                        "vesktop --run-shortcut toggleMute",
-                        "vesktop --run-shortcut pushToTalk:down",
-                        "vesktop --run-shortcut pushToTalk:up"
-                    ].join("\n")}
+                    content={["toggleMute", "pushToTalk:down", "pushToTalk:up"]
+                        .map(shortcut => `${command} --run-shortcut ${shortcut}`)
+                        .join("\n")}
                 />
             </div>
 

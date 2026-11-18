@@ -8,7 +8,7 @@ import { ipcRenderer } from "electron/renderer";
 import type { IpcMessage, IpcResponse } from "main/ipcCommands";
 import type { AudioAppList, AudioRequest } from "shared/screenShareAudio";
 import type { Settings } from "shared/settings";
-import type { KeybindStatus } from "shared/utils/keybind";
+import type { ExternalTriggers, KeybindStatus } from "shared/utils/keybind";
 
 import { IpcEvents } from "../shared/IpcEvents";
 import { invoke, sendSync } from "./typedIpc";
@@ -94,7 +94,7 @@ export const VesktopNative = {
     },
     keybinds: {
         getStatus: () => invoke<KeybindStatus>(IpcEvents.KEYBINDS_GET_STATUS),
-        getSocketPath: () => sendSync<string>(IpcEvents.KEYBINDS_GET_SOCKET_PATH),
+        getExternalTriggers: () => sendSync<ExternalTriggers>(IpcEvents.KEYBINDS_GET_EXTERNAL_TRIGGERS),
         retry: () => invoke<void>(IpcEvents.KEYBINDS_RETRY),
         requestPermission: () => invoke<void>(IpcEvents.KEYBINDS_REQUEST_PERMISSION),
         configurePortal: () => invoke<void>(IpcEvents.KEYBINDS_CONFIGURE_PORTAL)

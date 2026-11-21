@@ -52,7 +52,12 @@ export function startNativeHook(onInput: (input: HookInput) => void) {
     const { UiohookKey, uIOhook } = require("uiohook-napi") as typeof import("uiohook-napi");
     const keyNames = new Map(Object.entries(UiohookKey).map(([name, code]) => [code, toKeyName(name)]));
 
-    function sendInput(key: string | null, physicalKey: number, pressed: boolean, event: UiohookKeyboardEvent | UiohookMouseEvent) {
+    function sendInput(
+        key: string | null,
+        physicalKey: number,
+        pressed: boolean,
+        event: UiohookKeyboardEvent | UiohookMouseEvent
+    ) {
         const { ctrlKey, shiftKey, altKey, metaKey } = event;
         onInput({ key, physicalKey, pressed, ctrlKey, shiftKey, altKey, metaKey });
     }

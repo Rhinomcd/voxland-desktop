@@ -36,8 +36,8 @@ function watchDiscordStartup() {
                 window.removeEventListener("error", onError);
                 window.removeEventListener("unhandledrejection", onUnhandledRejection);
 
-                const mounted = (document.getElementById("app-mount")?.childElementCount ?? 0) > 0;
-                resolve(mounted ? undefined : (firstError ?? "Discord failed to mount"));
+                const appMount = document.getElementById("app-mount");
+                resolve(appMount?.childElementCount === 0 ? firstError || "Discord failed to mount" : undefined);
             }, 10_000);
         }
 
@@ -63,7 +63,9 @@ async function loadRenderer() {
         throw new Error("Vencord did not initialize window.Vencord");
     }
 
-    await webFrame.executeJavaScript(ipcRenderer.sendSync(IpcEvents.GET_VESKTOP_RENDERER_SCRIPT));
+    await webFrame
+        .executeJavaScript(ipcRenderer.sendSync(IpcEvents.GET_VESKTOP_RENDERER_SCRIPT))
+        .catch(error => console.error("Failed to run the Vesktop renderer:", error));
 }
 
 async function checkDiscordStartup() {

@@ -13,9 +13,11 @@ contextBridge.exposeInMainWorld("VesktopNative", VesktopNative);
 
 function watchDiscordStartup() {
     return new Promise<string | undefined>(resolve => {
+        let firstError: string | undefined;
+
         function recordError(message: string) {
             if (message !== "Uncaught Error: Sentry successfully disabled") {
-                finish(message);
+                firstError ??= message;
             }
         }
 
@@ -29,16 +31,13 @@ function watchDiscordStartup() {
             }
         }
 
-        function finish(message: string | undefined) {
-            window.removeEventListener("error", onError);
-            window.removeEventListener("unhandledrejection", onUnhandledRejection);
-            resolve(message);
-        }
-
         function onDomReady() {
             setTimeout(() => {
-                const appMount = document.getElementById("app-mount");
-                finish(appMount?.childElementCount === 0 ? "Discord failed to mount" : undefined);
+                window.removeEventListener("error", onError);
+                window.removeEventListener("unhandledrejection", onUnhandledRejection);
+
+                const mounted = (document.getElementById("app-mount")?.childElementCount ?? 0) > 0;
+                resolve(mounted ? undefined : (firstError ?? "Discord failed to mount"));
             }, 10_000);
         }
 

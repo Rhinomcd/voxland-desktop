@@ -535,7 +535,7 @@ export async function showStartupError(error: unknown) {
 
     if (response === StartupErrorChoice.Repair) {
         updateSplashMessage("Repairing client mod...");
-        downloadVencordFiles().then(relaunch, showStartupError);
+        await downloadVencordFiles().then(relaunch, showStartupError);
     }
 }
 

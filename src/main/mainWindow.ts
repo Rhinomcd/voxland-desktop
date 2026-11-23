@@ -40,7 +40,7 @@ import { handleExternalUrl, makeLinksOpenExternally } from "./utils/makeLinksOpe
 import { relaunch } from "./utils/relaunch";
 import { showWindow } from "./utils/showWindow";
 import { applyDeckKeyboardFix, askToApplySteamLayout, isDeckGameMode } from "./utils/steamOS";
-import { isValidVencordInstall } from "./utils/vencordLoader";
+import { isValidVencordInstall, pickVencordDir } from "./utils/vencordLoader";
 import { VENCORD_FILES_DIR } from "./vencordFilesDir";
 
 let isQuitting = false;
@@ -446,7 +446,7 @@ function createMainWindow() {
     win.webContents.session.setUserAgent(BrowserUserAgent);
     win.webContents.setUserAgent(BrowserUserAgent);
 
-    // if the open-url event is fired (in index.ts) while starting up, darwinURL will be set. If not fall back to checking the process args (which Windows and Linux use for URI calling.)
+    // if the open-url event is fired (in main.ts) while starting up, darwinURL will be set. If not fall back to checking the process args (which Windows and Linux use for URI calling.)
     // win.webContents.session.clearCache().then(() => {
     loadUrl(darwinURL || process.argv.find(arg => arg.startsWith("discord://")));
     // });
@@ -525,6 +525,23 @@ export async function showStartupError(error: unknown) {
     }
 }
 
+async function askForVencordDir(problem: string): Promise<void> {
+    getSplashWindow()?.hide();
+    const { response } = await dialog.showMessageBox({
+        type: "warning",
+        message: "Choose the Voxland mod folder",
+        detail: `${problem}\n\nChoose the dist folder of a Voxland build, or install with voxland-desktop's scripts/channel.sh.`,
+        buttons: ["Choose Folder", "Quit"],
+        defaultId: 0,
+        cancelId: 1
+    });
+    if (response === 1) return app.exit(1);
+
+    const result = await pickVencordDir();
+    if (result === "ok") return relaunch();
+    return askForVencordDir(result === "invalid" ? "That folder has no Voxland build." : problem);
+}
+
 export async function createWindows() {
     const startMinimized = CommandLine.values["start-minimized"];
 
@@ -538,8 +555,8 @@ export async function createWindows() {
 
     try {
         if (!(await isValidVencordInstall(VENCORD_FILES_DIR))) {
-            throw new Error(
-                `No client mod found in ${VENCORD_FILES_DIR}. Build Voxland into that folder, or install with voxland-desktop's scripts/channel.sh.`
+            return askForVencordDir(
+                VENCORD_FILES_DIR ? `No Voxland build found in ${VENCORD_FILES_DIR}.` : "No Voxland mod folder is set."
             );
         }
 

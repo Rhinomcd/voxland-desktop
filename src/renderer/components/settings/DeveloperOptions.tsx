@@ -36,25 +36,20 @@ function openDeveloperOptionsModal(settings: Settings) {
 
 const VencordLocationPicker: SettingsComponent = () => {
     const forceUpdate = useForceUpdater();
-    const usingCustomVencordDir = VesktopNative.fileManager.isUsingCustomVencordDir();
 
     return (
         <>
             <Paragraph>
                 Client mod files are loaded from{" "}
-                {usingCustomVencordDir ? (
-                    <TextButton
-                        variant="link"
-                        onClick={e => {
-                            e.preventDefault();
-                            VesktopNative.fileManager.showCustomVencordDir();
-                        }}
-                    >
-                        a custom location
-                    </TextButton>
-                ) : (
-                    "the default location"
-                )}
+                <TextButton
+                    variant="link"
+                    onClick={e => {
+                        e.preventDefault();
+                        VesktopNative.fileManager.showCustomVencordDir();
+                    }}
+                >
+                    this folder
+                </TextButton>
             </Paragraph>
             <div className={cl("button-grid")}>
                 <Button
@@ -77,15 +72,6 @@ const VencordLocationPicker: SettingsComponent = () => {
                     }}
                 >
                     Change
-                </Button>
-                <Button
-                    variant="dangerPrimary"
-                    onClick={async () => {
-                        await VesktopNative.fileManager.selectVencordDir(null);
-                        forceUpdate();
-                    }}
-                >
-                    Reset
                 </Button>
             </div>
         </>

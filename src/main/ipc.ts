@@ -11,7 +11,7 @@ import { readFile, stat } from "fs/promises";
 import { release } from "os";
 import { join } from "path";
 
-import { app, BrowserWindow, clipboard, ClipboardItem, dialog, IpcMainInvokeEvent, session, shell } from "electron";
+import { app, BrowserWindow, clipboard, ClipboardItem, IpcMainInvokeEvent, session, shell } from "electron";
 
 import { IpcEvents } from "../shared/IpcEvents";
 import { setBadgeCount } from "./appBadge";
@@ -23,7 +23,7 @@ import { handle, handleSync } from "./utils/ipcWrappers";
 import { PopoutWindows } from "./utils/popout";
 import { relaunch } from "./utils/relaunch";
 import { showWindow } from "./utils/showWindow";
-import { isValidVencordInstall } from "./utils/vencordLoader";
+import { pickVencordDir } from "./utils/vencordLoader";
 import { VENCORD_FILES_DIR } from "./vencordFilesDir";
 
 handleSync(IpcEvents.GET_VENCORD_PRELOAD_SCRIPT, () =>
@@ -74,7 +74,6 @@ handle(IpcEvents.SET_SETTINGS, (_, settings: typeof Settings.store, path?: strin
 
 handle(IpcEvents.RELAUNCH, relaunch);
 
-handleSync(IpcEvents.IS_USING_CUSTOM_VENCORD_DIR, () => !!State.store.vencordDir);
 handle(IpcEvents.SHOW_CUSTOM_VENCORD_DIR, async () => {
     const { vencordDir } = State.store;
     if (!vencordDir) return;
@@ -123,24 +122,7 @@ handle(IpcEvents.SPELLCHECK_ADD_TO_DICTIONARY, (e, word: string) => {
     e.sender.session.addWordToSpellCheckerDictionary(word);
 });
 
-handle(IpcEvents.SELECT_VENCORD_DIR, async (_e, value?: null) => {
-    if (value === null) {
-        delete State.store.vencordDir;
-        return "ok";
-    }
-
-    const res = await dialog.showOpenDialog(mainWin!, {
-        properties: ["openDirectory"]
-    });
-    if (!res.filePaths.length) return "cancelled";
-
-    const dir = res.filePaths[0];
-    if (!(await isValidVencordInstall(dir))) return "invalid";
-
-    State.store.vencordDir = dir;
-
-    return "ok";
-});
+handle(IpcEvents.SELECT_VENCORD_DIR, () => pickVencordDir(mainWin));
 
 handle(IpcEvents.SET_BADGE_COUNT, (_, count: number) => setBadgeCount(count));
 

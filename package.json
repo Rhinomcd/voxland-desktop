@@ -23,8 +23,7 @@
         "start:watch": "vp run build:dev && vpx scripts/startWatch.mts",
         "test": "vp run lint && vp run fmt:check && vp run testTypes && vp test",
         "testTypes": "tsc --noEmit",
-        "watch": "vp run build --watch",
-        "generateMeta": "vpx scripts/utils/generateMeta.mts"
+        "watch": "vp run build --watch"
     },
     "dependencies": {
         "electron-updater": "6.6.2",
@@ -48,7 +47,6 @@
         "tsx": "^4.23.15",
         "type-fest": "^5.10.0",
         "typescript": "^6.0.3",
-        "xml-formatter": "^3.6.7",
         "vite-plus": "catalog:"
     },
     "packageManager": "pnpm@12.21.0",
@@ -190,7 +188,9 @@
             ]
         },
         "publish": {
-            "provider": "github"
+            "provider": "github",
+            "owner": "Rhinomcd",
+            "repo": "voxland-desktop"
         },
         "rpm": {
             "fpm": [

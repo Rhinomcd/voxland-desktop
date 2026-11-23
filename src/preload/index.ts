@@ -13,31 +13,58 @@ contextBridge.exposeInMainWorld("VesktopNative", VesktopNative);
 
 function watchDiscordStartup() {
     return new Promise<string | undefined>(resolve => {
-        let firstError: string | undefined;
+        let modError: string | undefined;
+        let startupError: string | undefined;
+        let startupTimeout: number | undefined;
 
-        function recordError(message: string) {
-            if (message !== "Uncaught Error: Sentry successfully disabled") {
-                firstError ??= message;
+        function finish(message: string | undefined) {
+            window.clearTimeout(startupTimeout);
+            document.removeEventListener("DOMContentLoaded", onDomReady);
+            window.removeEventListener("error", onError);
+            window.removeEventListener("unhandledrejection", onUnhandledRejection);
+            resolve(message);
+        }
+
+        function recordError(message: string, filename: string, error: unknown) {
+            const detail = error instanceof Error ? error.message : message.replace(/^Uncaught Error: /, "");
+            if (
+                detail === "Sentry successfully disabled" ||
+                detail === "ResizeObserver loop completed with undelivered notifications." ||
+                detail === "ResizeObserver loop limit exceeded"
+            ) {
+                return;
+            }
+
+            const stack = error instanceof Error ? error.stack : undefined;
+            if (!filename && !stack) {
+                return;
+            }
+
+            const origin = stack?.split("\n").find(line => line.trimStart().startsWith("at ")) ?? filename;
+            const fromMod = /file:\/\/\/(?:Vencord(?:Desktop)?Renderer\b|WebpackModule\d+\b)|\bVesktopRenderer\b/.test(
+                origin
+            );
+            if (fromMod) {
+                modError ??= message;
+            } else {
+                startupError ??= message;
             }
         }
 
         function onError(event: ErrorEvent) {
-            recordError(event.message);
+            recordError(event.message, event.filename, event.error);
         }
 
         function onUnhandledRejection(event: PromiseRejectionEvent) {
             if (event.reason instanceof Error) {
-                recordError(event.reason.message);
+                recordError(event.reason.message, "", event.reason);
             }
         }
 
         function onDomReady() {
-            setTimeout(() => {
-                window.removeEventListener("error", onError);
-                window.removeEventListener("unhandledrejection", onUnhandledRejection);
-
+            startupTimeout = window.setTimeout(() => {
                 const appMount = document.getElementById("app-mount");
-                resolve(appMount?.childElementCount === 0 ? firstError || "Discord failed to mount" : undefined);
+                finish(appMount?.childElementCount === 0 ? modError || startupError || "Discord failed to mount" : undefined);
             }, 10_000);
         }
 

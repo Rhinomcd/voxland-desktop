@@ -15,7 +15,6 @@ import { resolveAssetPath } from "./userAssets";
 import { clearData } from "./utils/clearData";
 import { relaunch } from "./utils/relaunch";
 import { showWindow } from "./utils/showWindow";
-import { downloadVencordFiles } from "./utils/vencordLoader";
 
 let tray: Tray | undefined;
 let trayVariant: "tray" | "trayUnread" = "tray";
@@ -75,13 +74,6 @@ export async function initTray(win: BrowserWindow, setIsQuitting: (val: boolean)
         {
             label: "About",
             click: createAboutWindow
-        },
-        {
-            label: "Reinstall Default Client Mod",
-            async click() {
-                await downloadVencordFiles();
-                relaunch();
-            }
         },
         {
             label: "Reset Vesktop",

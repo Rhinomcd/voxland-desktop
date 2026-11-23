@@ -40,7 +40,7 @@ import { handleExternalUrl, makeLinksOpenExternally } from "./utils/makeLinksOpe
 import { relaunch } from "./utils/relaunch";
 import { showWindow } from "./utils/showWindow";
 import { applyDeckKeyboardFix, askToApplySteamLayout, isDeckGameMode } from "./utils/steamOS";
-import { downloadVencordFiles, isValidVencordInstall } from "./utils/vencordLoader";
+import { isValidVencordInstall } from "./utils/vencordLoader";
 import { VENCORD_FILES_DIR } from "./vencordFilesDir";
 
 let isQuitting = false;
@@ -85,14 +85,6 @@ function initMenuBar(win: BrowserWindow) {
         {
             label: "About Vesktop",
             click: createAboutWindow
-        },
-        {
-            label: "Reinstall Default Client Mod",
-            async click() {
-                await downloadVencordFiles();
-                relaunch();
-            },
-            toolTip: "Replaces the files in the client mod location with the default client mod, then restarts Vesktop"
         },
         {
             label: "Reset Vesktop",
@@ -499,7 +491,6 @@ function retryUrl(url: string, description: string) {
 }
 
 const enum StartupErrorChoice {
-    Repair,
     Quit,
     Dismiss
 }
@@ -518,9 +509,9 @@ export async function showStartupError(error: unknown) {
     const options: MessageBoxOptions = {
         type: "error",
         message: "Vesktop failed to start",
-        detail: `${error}\n\nRepair will replace the client mod files with the default client mod and restart Vesktop.`,
-        buttons: hasMainWindow ? ["Repair", "Quit", "Dismiss"] : ["Repair", "Quit"],
-        defaultId: StartupErrorChoice.Repair,
+        detail: String(error),
+        buttons: hasMainWindow ? ["Quit", "Dismiss"] : ["Quit"],
+        defaultId: StartupErrorChoice.Quit,
         cancelId: hasMainWindow ? StartupErrorChoice.Dismiss : StartupErrorChoice.Quit
     };
 
@@ -530,12 +521,7 @@ export async function showStartupError(error: unknown) {
     const { response } = await (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options));
 
     if (response === StartupErrorChoice.Quit) {
-        return app.exit(1);
-    }
-
-    if (response === StartupErrorChoice.Repair) {
-        updateSplashMessage("Repairing client mod...");
-        await downloadVencordFiles().then(relaunch, showStartupError);
+        app.exit(1);
     }
 }
 
@@ -552,8 +538,9 @@ export async function createWindows() {
 
     try {
         if (!(await isValidVencordInstall(VENCORD_FILES_DIR))) {
-            updateSplashMessage("Downloading client mod...");
-            await downloadVencordFiles();
+            throw new Error(
+                `No client mod found in ${VENCORD_FILES_DIR}. Build Voxland into that folder, or install with voxland-desktop's scripts/channel.sh.`
+            );
         }
 
         runVencordMain();

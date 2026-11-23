@@ -64,7 +64,11 @@ function watchDiscordStartup() {
         function onDomReady() {
             startupTimeout = window.setTimeout(() => {
                 const appMount = document.getElementById("app-mount");
-                finish(appMount?.childElementCount === 0 ? modError || startupError || "Discord failed to mount" : undefined);
+                finish(
+                    appMount?.childElementCount === 0
+                        ? modError || startupError || "Discord failed to mount"
+                        : undefined
+                );
             }, 10_000);
         }
 

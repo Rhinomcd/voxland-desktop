@@ -496,7 +496,7 @@ const enum StartupErrorChoice {
     Dismiss
 }
 
-export async function showStartupError(error: unknown) {
+export async function showStartupError(error: unknown, note?: string) {
     console.error("Failed to start Vesktop:", error);
 
     // Hyprland keeps the splash above a dialog parented to it
@@ -506,7 +506,13 @@ export async function showStartupError(error: unknown) {
     const options: MessageBoxOptions = {
         type: "error",
         message: "Voxland failed to start",
-        detail: `${error}\n\nChoose the dist folder of a working Voxland build, or reinstall with voxland-desktop's scripts/channel.sh.`,
+        detail: [
+            error instanceof Error ? error.message : String(error),
+            note,
+            "Choose the dist folder of a working Voxland build, or reinstall with voxland-desktop's scripts/channel.sh --force."
+        ]
+            .filter(Boolean)
+            .join("\n\n"),
         buttons: parent ? ["Choose Mod Folder", "Quit", "Dismiss"] : ["Choose Mod Folder", "Quit"],
         defaultId: StartupErrorChoice.ChooseModFolder,
         cancelId: parent ? StartupErrorChoice.Dismiss : StartupErrorChoice.Quit
@@ -524,7 +530,7 @@ export async function showStartupError(error: unknown) {
     if (response === StartupErrorChoice.ChooseModFolder) {
         const result = await pickVencordDir(parent);
         if (result === "ok") return relaunch();
-        return showStartupError(result === "invalid" ? "That folder has no Voxland build." : error);
+        return showStartupError(error, result === "invalid" ? "The folder you chose has no Voxland build." : undefined);
     }
 }
 

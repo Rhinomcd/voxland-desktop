@@ -26,13 +26,16 @@ export const DATA_DIR =
 // Written by "Reset Vesktop". Our data is deleted here on the next start, before anything uses it
 export const RESET_MARKER_FILE = join(DATA_DIR, ".reset-pending");
 if (existsSync(RESET_MARKER_FILE)) {
+    const statePath = join(DATA_DIR, "state.json");
+    let vencordDir: unknown;
     try {
-        const statePath = join(DATA_DIR, "state.json");
-        const { vencordDir } = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf-8")) : {};
+        vencordDir = JSON.parse(readFileSync(statePath, "utf-8"))?.vencordDir;
+    } catch {}
+    try {
         for (const entry of ["sessionData", "settings", "themes", "userAssets", "settings.json", "state.json"]) {
             rmSync(join(DATA_DIR, entry), { recursive: true, force: true, maxRetries: 5 });
         }
-        if (vencordDir) writeFileSync(statePath, JSON.stringify({ vencordDir }));
+        if (typeof vencordDir === "string" && vencordDir) writeFileSync(statePath, JSON.stringify({ vencordDir }));
         rmSync(RESET_MARKER_FILE);
     } catch (err) {
         console.error("Failed to reset Vesktop data:", err);

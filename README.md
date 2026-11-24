@@ -107,7 +107,7 @@ vp run package:dir               # unpacked app directory only
 
 ## Running the Voxland mod
 
-On first launch the app downloads the upstream Vencord build. To run the Voxland mod instead, build [Rhinomcd/voxland](https://github.com/Rhinomcd/voxland) and point Settings → Developer Options → Open Developer Settings → Client Mod Location at its `dist` folder.
+`scripts/channel.sh` builds both repos and points the app at the mod. To run your own build, build [Rhinomcd/voxland](https://github.com/Rhinomcd/voxland) and choose its `dist` folder when the app asks on first launch. Change it later in Settings → Developer Options → Open Developer Settings → Client Mod Location.
 
 ## Building libvesktop
 

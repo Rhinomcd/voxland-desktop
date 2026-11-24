@@ -134,7 +134,7 @@ await Promise.all([
     copyUiohook(),
     createContext({
         ...NodeCommonOpts,
-        entryPoints: ["src/main/index.ts"],
+        entryPoints: ["src/main/main.ts"],
         plugins: [uiohookBinaryPlugin],
         outfile: "dist/js/main.js",
         footer: { js: "//# sourceURL=VesktopMain" }

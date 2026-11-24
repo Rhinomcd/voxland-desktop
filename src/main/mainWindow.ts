@@ -40,7 +40,7 @@ import { handleExternalUrl, makeLinksOpenExternally } from "./utils/makeLinksOpe
 import { relaunch } from "./utils/relaunch";
 import { showWindow } from "./utils/showWindow";
 import { applyDeckKeyboardFix, askToApplySteamLayout, isDeckGameMode } from "./utils/steamOS";
-import { downloadVencordFiles, isValidVencordInstall } from "./utils/vencordLoader";
+import { isValidVencordInstall, pickVencordDir } from "./utils/vencordLoader";
 import { VENCORD_FILES_DIR } from "./vencordFilesDir";
 
 let isQuitting = false;
@@ -85,14 +85,6 @@ function initMenuBar(win: BrowserWindow) {
         {
             label: "About Vesktop",
             click: createAboutWindow
-        },
-        {
-            label: "Reinstall Default Client Mod",
-            async click() {
-                await downloadVencordFiles();
-                relaunch();
-            },
-            toolTip: "Replaces the files in the client mod location with the default client mod, then restarts Vesktop"
         },
         {
             label: "Reset Vesktop",
@@ -454,7 +446,7 @@ function createMainWindow() {
     win.webContents.session.setUserAgent(BrowserUserAgent);
     win.webContents.setUserAgent(BrowserUserAgent);
 
-    // if the open-url event is fired (in index.ts) while starting up, darwinURL will be set. If not fall back to checking the process args (which Windows and Linux use for URI calling.)
+    // if the open-url event is fired (in main.ts) while starting up, darwinURL will be set. If not fall back to checking the process args (which Windows and Linux use for URI calling.)
     // win.webContents.session.clearCache().then(() => {
     loadUrl(darwinURL || process.argv.find(arg => arg.startsWith("discord://")));
     // });
@@ -499,29 +491,31 @@ function retryUrl(url: string, description: string) {
 }
 
 const enum StartupErrorChoice {
-    Repair,
+    ChooseModFolder,
     Quit,
     Dismiss
 }
 
-export async function showStartupError(error: unknown) {
+export async function showStartupError(error: unknown, note?: string) {
     console.error("Failed to start Vesktop:", error);
 
-    const splash = getSplashWindow();
-    const hasMainWindow = mainWin && !mainWin.isDestroyed();
-    let parent = splash;
-    if (hasMainWindow) {
-        splash?.hide();
-        parent = mainWin;
-    }
+    // Hyprland keeps the splash above a dialog parented to it
+    getSplashWindow()?.hide();
+    const parent = mainWin && !mainWin.isDestroyed() ? mainWin : undefined;
 
     const options: MessageBoxOptions = {
         type: "error",
-        message: "Vesktop failed to start",
-        detail: `${error}\n\nRepair will replace the client mod files with the default client mod and restart Vesktop.`,
-        buttons: hasMainWindow ? ["Repair", "Quit", "Dismiss"] : ["Repair", "Quit"],
-        defaultId: StartupErrorChoice.Repair,
-        cancelId: hasMainWindow ? StartupErrorChoice.Dismiss : StartupErrorChoice.Quit
+        message: "Voxland failed to start",
+        detail: [
+            error instanceof Error ? error.message : String(error),
+            note,
+            'Choose the dist folder of a working Voxland build, or reinstall with voxland-desktop\'s "scripts/channel.sh install stable --force" (or nightly).'
+        ]
+            .filter(Boolean)
+            .join("\n\n"),
+        buttons: parent ? ["Choose Mod Folder", "Quit", "Dismiss"] : ["Choose Mod Folder", "Quit"],
+        defaultId: StartupErrorChoice.ChooseModFolder,
+        cancelId: parent ? StartupErrorChoice.Dismiss : StartupErrorChoice.Quit
     };
 
     if (parent) {
@@ -533,9 +527,10 @@ export async function showStartupError(error: unknown) {
         return app.exit(1);
     }
 
-    if (response === StartupErrorChoice.Repair) {
-        updateSplashMessage("Repairing client mod...");
-        await downloadVencordFiles().then(relaunch, showStartupError);
+    if (response === StartupErrorChoice.ChooseModFolder) {
+        const result = await pickVencordDir(parent);
+        if (result === "ok") return relaunch();
+        return showStartupError(error, result === "invalid" ? "The folder you chose has no Voxland build." : undefined);
     }
 }
 
@@ -552,15 +547,19 @@ export async function createWindows() {
 
     try {
         if (!(await isValidVencordInstall(VENCORD_FILES_DIR))) {
-            updateSplashMessage("Downloading client mod...");
-            await downloadVencordFiles();
+            throw new Error(
+                VENCORD_FILES_DIR ? `No Voxland build found in ${VENCORD_FILES_DIR}.` : "No Voxland mod folder is set."
+            );
         }
 
         runVencordMain();
 
         mainWin = createMainWindow();
     } catch (err) {
-        return showStartupError(err);
+        return showStartupError(err).catch(fatal => {
+            console.error("Startup error dialog failed:", fatal);
+            app.exit(1);
+        });
     }
 
     AppEvents.on("appLoaded", () => {

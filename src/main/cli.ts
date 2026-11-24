@@ -49,10 +49,6 @@ const options = {
         type: "string",
         description: `Trigger a keybind action in the running instance. Append :down or :up to only press or release it (e.g. for push to talk). Actions: ${SHORTCUT_ACTIONS.join(", ")}`,
         argumentName: "action[:down|:up]"
-    },
-    repair: {
-        type: "boolean",
-        description: "Repair the application by replacing the client mod files with the latest default client mod"
     }
 } satisfies Record<string, Option>;
 

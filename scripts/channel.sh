@@ -96,6 +96,7 @@ install_channel() {
     desktop_sha=$(checkout voxland-desktop)
     stamp="voxland@$mod_sha voxland-desktop@$desktop_sha"
     if [[ $force != --force && -d $install_dir && $(cat "$root/installed" 2>/dev/null) == "$stamp" ]]; then
+        jq -e '.vencordDir // "" | length > 0' "$profile/state.json" >/dev/null 2>&1 || point_profile_at_mod
         echo "$name is already at $stamp"
         return 0
     fi

@@ -50,9 +50,8 @@ export const VesktopNative = {
         disable: () => invoke<void>(IpcEvents.DISABLE_AUTOSTART)
     },
     fileManager: {
-        isUsingCustomVencordDir: () => sendSync<boolean>(IpcEvents.IS_USING_CUSTOM_VENCORD_DIR),
         showCustomVencordDir: () => invoke<void>(IpcEvents.SHOW_CUSTOM_VENCORD_DIR),
-        selectVencordDir: (value?: null) => invoke<"cancelled" | "invalid" | "ok">(IpcEvents.SELECT_VENCORD_DIR, value),
+        selectVencordDir: () => invoke<"cancelled" | "invalid" | "ok">(IpcEvents.SELECT_VENCORD_DIR),
         chooseUserAsset: (asset: string, value?: null) =>
             invoke<"cancelled" | "invalid" | "ok" | "failed">(IpcEvents.CHOOSE_USER_ASSET, asset, value)
     },

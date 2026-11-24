@@ -509,7 +509,7 @@ export async function showStartupError(error: unknown, note?: string) {
         detail: [
             error instanceof Error ? error.message : String(error),
             note,
-            "Choose the dist folder of a working Voxland build, or reinstall with voxland-desktop's scripts/channel.sh --force."
+            'Choose the dist folder of a working Voxland build, or reinstall with voxland-desktop\'s "scripts/channel.sh install stable --force" (or nightly).'
         ]
             .filter(Boolean)
             .join("\n\n"),

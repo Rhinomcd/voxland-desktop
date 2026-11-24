@@ -5,7 +5,7 @@
  */
 
 import { Button, Heading, Paragraph, TextButton } from "@vencord/types/components";
-import { Margins, promptToRestart, useForceUpdater } from "@vencord/types/utils";
+import { Margins, promptToRestart } from "@vencord/types/utils";
 import { Modal, openModal, showToast } from "@vencord/types/webpack/common";
 import { Settings } from "shared/settings";
 
@@ -35,8 +35,6 @@ function openDeveloperOptionsModal(settings: Settings) {
 }
 
 const VencordLocationPicker: SettingsComponent = () => {
-    const forceUpdate = useForceUpdater();
-
     return (
         <>
             <Paragraph>
@@ -68,7 +66,6 @@ const VencordLocationPicker: SettingsComponent = () => {
                                 });
                                 break;
                         }
-                        forceUpdate();
                     }}
                 >
                     Change

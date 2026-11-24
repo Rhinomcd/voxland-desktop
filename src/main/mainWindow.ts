@@ -491,6 +491,7 @@ function retryUrl(url: string, description: string) {
 }
 
 const enum StartupErrorChoice {
+    ChooseModFolder,
     Quit,
     Dismiss
 }
@@ -498,21 +499,17 @@ const enum StartupErrorChoice {
 export async function showStartupError(error: unknown) {
     console.error("Failed to start Vesktop:", error);
 
-    const splash = getSplashWindow();
-    const hasMainWindow = mainWin && !mainWin.isDestroyed();
-    let parent = splash;
-    if (hasMainWindow) {
-        splash?.hide();
-        parent = mainWin;
-    }
+    // Hyprland keeps the splash above a dialog parented to it
+    getSplashWindow()?.hide();
+    const parent = mainWin && !mainWin.isDestroyed() ? mainWin : undefined;
 
     const options: MessageBoxOptions = {
         type: "error",
-        message: "Vesktop failed to start",
-        detail: String(error),
-        buttons: hasMainWindow ? ["Quit", "Dismiss"] : ["Quit"],
-        defaultId: StartupErrorChoice.Quit,
-        cancelId: hasMainWindow ? StartupErrorChoice.Dismiss : StartupErrorChoice.Quit
+        message: "Voxland failed to start",
+        detail: `${error}\n\nChoose the dist folder of a working Voxland build, or reinstall with voxland-desktop's scripts/channel.sh.`,
+        buttons: parent ? ["Choose Mod Folder", "Quit", "Dismiss"] : ["Choose Mod Folder", "Quit"],
+        defaultId: StartupErrorChoice.ChooseModFolder,
+        cancelId: parent ? StartupErrorChoice.Dismiss : StartupErrorChoice.Quit
     };
 
     if (parent) {
@@ -521,25 +518,14 @@ export async function showStartupError(error: unknown) {
     const { response } = await (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options));
 
     if (response === StartupErrorChoice.Quit) {
-        app.exit(1);
+        return app.exit(1);
     }
-}
 
-async function askForVencordDir(problem: string): Promise<void> {
-    getSplashWindow()?.hide();
-    const { response } = await dialog.showMessageBox({
-        type: "warning",
-        message: "Choose the Voxland mod folder",
-        detail: `${problem}\n\nChoose the dist folder of a Voxland build, or install with voxland-desktop's scripts/channel.sh.`,
-        buttons: ["Choose Folder", "Quit"],
-        defaultId: 0,
-        cancelId: 1
-    });
-    if (response === 1) return app.exit(1);
-
-    const result = await pickVencordDir();
-    if (result === "ok") return relaunch();
-    return askForVencordDir(result === "invalid" ? "That folder has no Voxland build." : problem);
+    if (response === StartupErrorChoice.ChooseModFolder) {
+        const result = await pickVencordDir(parent);
+        if (result === "ok") return relaunch();
+        return showStartupError(result === "invalid" ? "That folder has no Voxland build." : error);
+    }
 }
 
 export async function createWindows() {
@@ -555,7 +541,7 @@ export async function createWindows() {
 
     try {
         if (!(await isValidVencordInstall(VENCORD_FILES_DIR))) {
-            return askForVencordDir(
+            throw new Error(
                 VENCORD_FILES_DIR ? `No Voxland build found in ${VENCORD_FILES_DIR}.` : "No Voxland mod folder is set."
             );
         }
@@ -564,7 +550,10 @@ export async function createWindows() {
 
         mainWin = createMainWindow();
     } catch (err) {
-        return showStartupError(err);
+        return showStartupError(err).catch(fatal => {
+            console.error("Startup error dialog failed:", fatal);
+            app.exit(1);
+        });
     }
 
     AppEvents.on("appLoaded", () => {

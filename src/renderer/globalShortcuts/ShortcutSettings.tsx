@@ -270,7 +270,7 @@ function ExternalTriggers() {
             </Paragraph>
 
             <div className={cl("external-section")}>
-                <Heading tag="h4">Comma</Heading>
+                <Heading tag="h4">Command Line</Heading>
                 <CodeBlock
                     lang="sh"
                     content={["toggleMute", "pushToTalk:down", "pushToTalk:up"]
